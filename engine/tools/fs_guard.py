@@ -74,6 +74,23 @@ def resolve_path(paper_id: str, relpath: str):
     return target
 
 
+def prepare_path(paper_id: str, relpath: str, *, caller_agent: str | None = None):
+    """Like resolve_path, but also enforces ARTIFACT_WRITE_POLICY and creates the
+    parent directory. For binary artifacts (parquet, figures) that can't go through
+    safe_write's text-based LaTeX checks -- the caller writes bytes to the returned
+    path itself.
+    """
+    normalized = relpath.replace("\\", "/").lstrip("/")
+    allowed = ARTIFACT_WRITE_POLICY.get(normalized)
+    if allowed is not None and caller_agent not in allowed:
+        raise ArtifactWriteError(
+            f"{caller_agent!r} is not allowed to write {normalized!r}; only {sorted(allowed)} may"
+        )
+    target = resolve_path(paper_id, normalized)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def safe_write(paper_id: str, relpath: str, content: str, *, caller_agent: str):
     """Write `content` to papers/<paper_id>/<relpath>, enforcing guardrails.
 
