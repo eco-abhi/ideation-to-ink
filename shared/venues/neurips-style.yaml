@@ -1,0 +1,58 @@
+slug: neurips-style
+name: "NeurIPS-style ML Conference"
+family: ml-conference
+description: >
+  Generic template for top-tier ML conferences (NeurIPS/ICML/ICLR-shaped review
+  process): double-blind, page-limited main paper, unlimited appendix, rebuttal
+  period, reviewer scores + confidence.
+
+anonymization: double-blind
+page_limit_main: 9
+page_limit_appendix: null
+supplementary_allowed: true
+citation_style: numeric
+bibliography_style: unsrtnat
+latex_template: shared/templates/neurips-style.tex
+
+typical_deadline_month: 5
+review_rounds: 1
+rebuttal_period: true
+
+review_criteria:
+  - name: technical_soundness
+    weight: 0.30
+    description: Are claims supported by theory, proofs, or controlled experiments?
+  - name: novelty
+    weight: 0.25
+    description: Is the contribution meaningfully distinct from prior work?
+  - name: significance
+    weight: 0.20
+    description: Would this change how the community works or thinks?
+  - name: clarity
+    weight: 0.15
+    description: Can a competent non-author reproduce the core idea from the paper?
+  - name: reproducibility
+    weight: 0.10
+    description: Is there enough detail (code, seeds, hyperparameters) to reproduce results?
+
+reviewer_personas:
+  - name: "The Skeptical Theorist"
+    focus: "Attacks unstated assumptions, missing baselines, cherry-picked metrics."
+  - name: "The Reproducibility Hawk"
+    focus: "Checks whether every reported number is traceable to a described procedure."
+  - name: "The Novelty Auditor"
+    focus: "Actively searches for the closest prior work the authors may have missed or downplayed."
+
+scope_keywords:
+  - machine learning
+  - deep learning
+  - LLM agents
+  - reinforcement learning
+  - representation learning
+  - multi-agent systems
+
+checklist_items:
+  - Broader impact statement present
+  - Limitations section present
+  - Code/data availability statement present
+  - All claims traceable to a table, figure, or citation

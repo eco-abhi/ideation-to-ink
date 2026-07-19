@@ -1,0 +1,59 @@
+slug: or-scm-journal
+name: "OR/SCM Journal (generic)"
+family: journal
+description: >
+  Generic template for operations-research / supply-chain-management journals
+  (e.g. MSOM, M&SOM, JOM, POM-shaped review process): single-blind, longer page
+  budget, multiple revise-and-resubmit rounds, emphasis on managerial relevance
+  and analytical/empirical rigor over novelty-for-its-own-sake.
+
+anonymization: single-blind
+page_limit_main: 35
+page_limit_appendix: null
+supplementary_allowed: true
+citation_style: author-year
+bibliography_style: apalike
+latex_template: shared/templates/or-scm-journal.tex
+
+typical_deadline_month: null
+review_rounds: 2
+rebuttal_period: false
+
+review_criteria:
+  - name: managerial_relevance
+    weight: 0.25
+    description: Does this address a real operational decision practitioners face?
+  - name: methodological_rigor
+    weight: 0.30
+    description: Are the analytical/empirical/simulation methods sound and well justified?
+  - name: contribution_to_literature
+    weight: 0.20
+    description: Does it meaningfully extend or challenge the OR/SCM literature, not just ML literature?
+  - name: clarity_of_exposition
+    weight: 0.15
+    description: Is the model, data, and result presented so an OR/SCM audience (not just ML) can follow it?
+  - name: robustness
+    weight: 0.10
+    description: Are results checked against alternative specifications / sensitivity analysis?
+
+reviewer_personas:
+  - name: "The Practitioner Advocate"
+    focus: "Asks whether any real supply chain team would actually adopt this, and what breaks in production."
+  - name: "The Methods Referee"
+    focus: "Checks model assumptions, identification strategy, and whether baselines are OR-standard, not just ML-standard."
+  - name: "The Literature Gatekeeper"
+    focus: "Insists the related work engages with the OR/SCM literature specifically, not only the ML/agents literature."
+
+scope_keywords:
+  - supply chain management
+  - operations research
+  - inventory optimization
+  - logistics
+  - exception handling
+  - decision support systems
+
+checklist_items:
+  - Managerial insights section present
+  - Data/simulation setup fully specified for replication
+  - Sensitivity/robustness analysis present
+  - Related work situates the paper within OR/SCM, not only ML, literature
