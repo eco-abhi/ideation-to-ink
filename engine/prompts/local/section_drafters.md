@@ -10,6 +10,11 @@ Key points to cover in this section:
 {key_points}
 Target length: ~{target_word_count} words.
 
+Revision feedback from the last review round (address this first if present --
+it takes priority over the general key points above, which describe the
+original brief, not what reviewers actually flagged):
+{revision_feedback}
+
 ## Citations
 
 You do not have a live bibliography yet -- a downstream `citation_verifier` agent

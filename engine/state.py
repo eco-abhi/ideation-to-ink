@@ -95,3 +95,14 @@ class PaperState(BaseModel):
         for record in self.citation_records:
             by_key[record.bib_key] = record
         return list(by_key.values())
+
+    def effective_review_rounds(self) -> list[ReviewRound]:
+        """Multiple review-phase agents (adversarial_reviewer_ensemble,
+        claims_evidence_auditor, flow_checker, compliance_checker) each append
+        concerns onto the *same* round number via a corrected ReviewRound rather
+        than mutating it in place. Keeps the last-appended entry per round number.
+        """
+        by_round: dict[int, ReviewRound] = {}
+        for review_round in self.review_rounds:
+            by_round[review_round.round] = review_round
+        return sorted(by_round.values(), key=lambda r: r.round)

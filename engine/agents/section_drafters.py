@@ -16,6 +16,7 @@ from bibtexparser.bwriter import BibTexWriter
 from pydantic import BaseModel, Field
 
 from engine.agents.base import NodeResult
+from engine.config import paper_dir
 from engine.llm import call_llm_json
 from engine.prompts.loader import build_system_prompt
 from engine.prompts.loader import skill_ref as _skill_ref
@@ -51,6 +52,26 @@ class DraftedSection(BaseModel):
     latex: str
     citations: list[Citation] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
+
+
+def _revision_feedback_for_section(state: PaperState, section_name: str) -> str | None:
+    """If a prior review round produced a revision_brief.md with a block for this
+    section, surface it so the redraft actually addresses what was flagged instead
+    of the loop just regenerating the same content. Looks at the highest round
+    number seen so far, since that's the one that triggered this redraft.
+    """
+    rounds = state.effective_review_rounds()
+    if not rounds:
+        return None
+    round_num = max(r.round for r in rounds)
+    brief_path = paper_dir(state.paper_id) / "reviews" / f"round_{round_num:02d}" / "revision_brief.md"
+    if not brief_path.exists():
+        return None
+    text = brief_path.read_text()
+    marker = f"## {section_name}"
+    if marker not in text:
+        return None
+    return text.split(marker, 1)[1].split("\n## ", 1)[0].strip()
 
 
 def _skills_for_section(name: str) -> list[str]:
@@ -103,6 +124,7 @@ def section_drafters(state: PaperState) -> NodeResult:
                 "research_questions": "\n".join(f"- {q}" for q in state.research_questions) or "(none)",
                 "key_points": "\n".join(f"- {p}" for p in plan.get("key_points", [])) or "(use your judgment)",
                 "target_word_count": plan.get("target_word_count", 300),
+                "revision_feedback": _revision_feedback_for_section(state, section_name) or "(none -- first draft)",
             },
         )
         drafted, llm_result = call_llm_json(
