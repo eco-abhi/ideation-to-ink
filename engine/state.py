@@ -73,3 +73,25 @@ class PaperState(BaseModel):
     # interrupt(); routers use len(errors) > errors_acknowledged_count to detect *new*
     # failures without re-triggering on old, already-acknowledged ones after --resume.
     errors_acknowledged_count: int = 0
+
+    def effective_claims(self) -> list[Claim]:
+        """`claims` is an append-only log (operator.add reducer) -- a later node
+        (e.g. citation_verifier marking a claim disputed once its citation is
+        stripped) appends a corrected Claim rather than mutating the original.
+        Callers that want "current status per claim id" should use this, which
+        keeps the last-appended entry per id, not raw `claims`.
+        """
+        by_id: dict[str, Claim] = {}
+        for claim in self.claims:
+            by_id[claim.id] = claim
+        return list(by_id.values())
+
+    def effective_citation_records(self) -> list[CitationRecord]:
+        """Same append-only-log caveat as `claims`: citation_verifier re-derives every
+        record from the current refs_draft.bib on each run, so a revision loop that
+        re-runs it would otherwise pile up stale duplicate records per bib_key.
+        """
+        by_key: dict[str, CitationRecord] = {}
+        for record in self.citation_records:
+            by_key[record.bib_key] = record
+        return list(by_key.values())
