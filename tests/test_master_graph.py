@@ -3,7 +3,7 @@ import json
 import yaml
 
 from engine.agents.base import NodeResult
-from engine.graphs import experiments, ideation, master
+from engine.graphs import experiments, ideation, master, review, writing
 
 
 def test_build_master_graph_compiles():
@@ -104,3 +104,65 @@ def test_run_single_agent_hydrates_from_paper_yaml_when_no_checkpoint(tmp_path, 
     master.run_single_agent("demo", agent_name="citation_verifier")
     captured = capsys.readouterr()
     assert "0 verified" in captured.out
+
+
+def test_full_pipeline_reaches_done_and_writes_ledger(tmp_path, monkeypatch, capsys):
+    """End-to-end: every phase mocked to return a clean result, two human gates
+    (novelty verdict, methodology approval) resumed, results_gate passed through
+    silently (metrics.json pre-seeded), citation_human_gate passed through
+    silently (no suspicious citations), revision_router converging immediately
+    (no major concerns) -> phase=done -> automatic state_compaction ledger write.
+    """
+    pdir = _setup(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(experiments, "experiment_scaffolder", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(experiments, "stats_validator", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(experiments, "paper_dir", lambda paper_id: tmp_path / "papers" / paper_id)
+    (pdir / "experiments" / "results").mkdir(parents=True)
+    (pdir / "experiments" / "results" / "metrics.json").write_text("{}")
+
+    monkeypatch.setattr(writing, "structure_agent", lambda state: NodeResult(update={"outline": {"sections": []}}))
+    monkeypatch.setattr(writing, "section_drafters", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(
+        writing,
+        "citation_verifier",
+        lambda state: NodeResult(update={"bib_keys": [], "citation_records": []}),
+    )
+
+    monkeypatch.setattr(review, "adversarial_reviewer_ensemble", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(review, "claims_evidence_auditor", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(review, "flow_checker", lambda state: NodeResult(update={}))
+    monkeypatch.setattr(review, "compliance_checker", lambda state: NodeResult(update={}))
+
+    def fake_revision_router(state):
+        from engine.state import ReviewRound
+
+        return NodeResult(update={"review_rounds": [ReviewRound(round=1, resolved=True)], "phase": "done"})
+
+    monkeypatch.setattr(review, "revision_router", fake_revision_router)
+
+    ledger_calls = []
+    monkeypatch.setattr(
+        master,
+        "state_compaction",
+        lambda state: ledger_calls.append(state.paper_id) or NodeResult(update={}, output_summary="ledger ok"),
+    )
+
+    master.run_paper("demo", resume=False)  # -> novelty_verdict interrupt
+    (pdir / "HUMAN_RESPONSE.json").write_text(json.dumps({"decision": "proceed"}))
+    master.run_paper("demo", resume=True)  # -> methodology_approval interrupt
+
+    payload = json.loads((pdir / "HUMAN_INPUT_NEEDED.json").read_text())
+    assert payload["type"] == "methodology_approval"
+
+    (pdir / "HUMAN_RESPONSE.json").write_text(json.dumps({"decision": "approve"}))
+    master.run_paper("demo", resume=True)  # -> runs the rest of the pipeline to completion
+
+    captured = capsys.readouterr()
+    assert "phase=done" in captured.out
+    assert not (pdir / "HUMAN_INPUT_NEEDED.json").exists()
+    assert ledger_calls == ["demo"]
+
+    paper_yaml = yaml.safe_load((pdir / "paper.yaml").read_text())
+    assert paper_yaml["phase"] == "done"
+    assert paper_yaml["status"] == "done"

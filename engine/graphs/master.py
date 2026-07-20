@@ -23,6 +23,7 @@ from engine.agents.adversarial_reviewer_ensemble import adversarial_reviewer_ens
 from engine.agents.citation_verifier import citation_verifier
 from engine.agents.rebuttal_writer import rebuttal_writer
 from engine.agents.redline_diff import redline_diff
+from engine.agents.state_compaction import state_compaction
 from engine.config import checkpoint_path, paper_dir
 from engine.graphs import experiments, ideation, review, writing
 from engine.graphs._registry import ERROR_GATE, error_gate
@@ -45,6 +46,7 @@ CHECK_AGENTS: dict[str, Any] = {
     "citation_verifier": citation_verifier,
     "redline_diff": redline_diff,
     "rebuttal_writer": rebuttal_writer,
+    "state_compaction": state_compaction,
 }
 
 
@@ -151,6 +153,12 @@ def run_paper(paper_id: str, *, target_phase: str | None = None, resume: bool = 
         doc["status"] = "done" if doc["phase"] == "done" else "in_progress"
         save_paper_yaml(paper_id, doc)
         print(f"papers/{paper_id}/ now at phase={doc['phase']}")
+
+        if doc["phase"] == "done":
+            try:
+                state_compaction(PaperState.model_validate(result))
+            except Exception as exc:  # noqa: BLE001 -- best-effort wrap-up, never block a completed run on this
+                print(f"(note: state ledger write failed: {exc})")
 
 
 def run_single_agent(paper_id: str, *, agent_name: str) -> None:
