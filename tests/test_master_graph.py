@@ -41,9 +41,19 @@ def _setup(tmp_path, monkeypatch, slug="demo"):
     monkeypatch.setattr(master, "checkpoint_path", lambda paper_id: tmp_path / f"{paper_id}.sqlite")
     monkeypatch.setattr(master, "paper_dir", lambda paper_id: tmp_path / "papers" / paper_id)
 
+    import engine.config as config_mod
     import engine.tools.workspace as workspace_mod
+    from engine.tools import fs_guard
 
     monkeypatch.setattr(workspace_mod, "paper_dir", lambda paper_id: tmp_path / "papers" / paper_id)
+    # engine.config.PAPERS_ROOT is what the real paper_dir() function (used directly
+    # by unmocked plumbing nodes like writing._mark_writing_complete) resolves against,
+    # regardless of which module imported the function -- a function's globals are its
+    # *defining* module's namespace, not the caller's. Patching it here, plus
+    # fs_guard.PAPERS_ROOT below, isolates every real filesystem write this test doesn't
+    # explicitly mock, not just the agent functions it fakes out.
+    monkeypatch.setattr(config_mod, "PAPERS_ROOT", tmp_path / "papers")
+    monkeypatch.setattr(fs_guard, "PAPERS_ROOT", tmp_path / "papers")
 
     pdir = tmp_path / "papers" / slug
     pdir.mkdir(parents=True)

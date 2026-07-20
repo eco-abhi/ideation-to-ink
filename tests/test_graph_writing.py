@@ -22,7 +22,7 @@ def _make_fake_citation_verifier(records: list[CitationRecord], bib_keys: list[s
     return _fake
 
 
-def test_no_suspicious_citations_skips_interrupt(monkeypatch):
+def test_no_suspicious_citations_skips_interrupt(tmp_path, monkeypatch):
     monkeypatch.setattr(writing, "structure_agent", _fake_structure_agent)
     monkeypatch.setattr(writing, "section_drafters", _fake_section_drafters)
     monkeypatch.setattr(
@@ -32,12 +32,16 @@ def test_no_suspicious_citations_skips_interrupt(monkeypatch):
             [CitationRecord(bib_key="a1", status="verified", rationale="ok")], ["a1"]
         ),
     )
+    monkeypatch.setattr(writing, "paper_dir", lambda slug: tmp_path / slug)
+    monkeypatch.setattr(writing.fs_guard, "PAPERS_ROOT", tmp_path)
+    (tmp_path / "demo").mkdir()
 
     with compiled_graph(writing.add_writing_nodes, entry_node=writing.ENTRY_NODE, exit_node=writing.WRITING_COMPLETE) as graph:
         config = {"configurable": {"thread_id": "demo"}}
         final = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "writing"}, config)
         assert "__interrupt__" not in final
         assert final["bib_keys"] == ["a1"]
+        assert final["artifacts"]["main_tex"] == "manuscript/main.tex"
 
 
 def test_suspicious_citations_pause_and_human_approval_merges_into_refs_bib(tmp_path, monkeypatch):
