@@ -17,6 +17,13 @@ from pydantic import BaseModel
 
 from engine.config import EMBEDDING_MODEL, model_for_agent
 
+# Provider-agnostic by design (engine.config.DEFAULT_LLM_MODEL / AGENT_MODEL_OVERRIDES
+# can point at any litellm-supported model), but not every model accepts every
+# parameter -- e.g. reasoning models often only support temperature=1 and reject an
+# explicit temperature=0.2. Rather than special-case models here, drop whatever a
+# given model doesn't support instead of hard-failing the call.
+litellm.drop_params = True
+
 Message = dict[str, str]
 T = TypeVar("T", bound=BaseModel)
 

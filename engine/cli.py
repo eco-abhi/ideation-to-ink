@@ -5,45 +5,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-import yaml
-
-from engine.config import paper_dir
-
-_WORKSPACE_SUBDIRS = [
-    "ideation",
-    "experiments/src",
-    "experiments/data",
-    "experiments/results",
-    "experiments/env",
-    "manuscript/sections",
-    "manuscript/figures",
-    "reviews",
-    "provenance",
-]
+from engine.tools.workspace import scaffold_workspace
 
 
 def cmd_new(args: argparse.Namespace) -> None:
-    slug = args.slug
-    pdir = paper_dir(slug)
-    if pdir.exists():
-        raise SystemExit(f"papers/{slug}/ already exists")
-
-    for sub in _WORKSPACE_SUBDIRS:
-        (pdir / sub).mkdir(parents=True, exist_ok=True)
-
-    (pdir / "provenance" / "run_log.jsonl").touch()
-    (pdir / "manuscript" / "refs.bib").write_text("")
-
-    paper_yaml = {
-        "paper_id": slug,
-        "topic": args.topic,
-        "venue": None,
-        "deadline": None,
-        "phase": "ideation",
-        "status": "new",
-    }
-    (pdir / "paper.yaml").write_text(yaml.safe_dump(paper_yaml, sort_keys=False))
-    print(f"Scaffolded papers/{slug}/")
+    try:
+        scaffold_workspace(args.slug, topic=args.topic)
+    except FileExistsError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"Scaffolded papers/{args.slug}/")
 
 
 def cmd_run(args: argparse.Namespace) -> None:

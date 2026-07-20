@@ -1,10 +1,11 @@
 import yaml
 
 from engine import cli
+from engine.tools import workspace
 
 
 def test_cmd_new_scaffolds_workspace(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "paper_dir", lambda slug: tmp_path / slug)
+    monkeypatch.setattr(workspace, "paper_dir", lambda slug: tmp_path / slug)
 
     cli.main(["new", "demo", "--topic", "LLM agents for supply chain exception handling"])
 
@@ -32,7 +33,7 @@ def test_cmd_new_scaffolds_workspace(tmp_path, monkeypatch):
 
 
 def test_cmd_new_refuses_existing_workspace(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "paper_dir", lambda slug: tmp_path / slug)
+    monkeypatch.setattr(workspace, "paper_dir", lambda slug: tmp_path / slug)
     (tmp_path / "demo").mkdir()
 
     try:
