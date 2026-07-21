@@ -39,6 +39,31 @@ continues from exactly where it left off.
   current workspace without a full pipeline run. Available:
   `review_ensemble`, `citation_verifier`, `redline_diff`, `rebuttal_writer`,
   `state_compaction`
+- `engine costs <slug> [--by-model]` — token usage and cost, aggregated from
+  `provenance/run_log.jsonl`
+
+## Dashboard
+
+A read-only web dashboard over `papers/<slug>/` workspaces: paper list, a live
+process-flow diagram (colored by node status: pending/completed/failed/paused,
+click a node for its provenance detail or the paused gate's payload), and the
+same cost/usage data `engine costs` prints, rendered as a table.
+
+```bash
+pip install -e ".[dev,web]"
+uvicorn web.backend.app:app --reload --port 8000      # terminal 1
+
+cd web/frontend && npm install                        # first time only
+npm run dev                                            # terminal 2, http://localhost:5173
+```
+
+Read-only in this version — no gate-response actions from the UI yet (still
+write `HUMAN_RESPONSE.json` + `engine run --resume` as above). The frontend
+polls every ~3s; there's no WebSocket/background-job machinery, since every
+route just reads files/checkpoint state that already exists on disk. See
+`web/backend/topology.py`'s docstring for how the flow diagram's node/edge
+structure is derived (hand-authored, guarded against drift from the real
+graph by `tests/test_topology.py`).
 
 ## Architecture
 
