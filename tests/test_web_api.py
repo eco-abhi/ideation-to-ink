@@ -41,7 +41,7 @@ def test_list_papers_returns_summaries(tmp_path, client):
     data = response.json()
     assert len(data) == 1
     assert data[0]["paper_id"] == "demo"
-    assert data[0]["topic"] == "LLM agents for supply chain exception handling"
+    assert data[0]["title"] == "LLM agents for supply chain exception handling"
 
 
 def test_get_paper_404_for_unknown_slug(client):
@@ -165,27 +165,42 @@ def test_get_artifact_rejects_path_traversal(tmp_path, client):
 
 
 def test_create_paper_scaffolds_workspace(tmp_path, client):
-    response = client.post("/api/papers", json={"slug": "new-paper", "topic": "A real topic"})
+    response = client.post(
+        "/api/papers",
+        json={"slug": "new-paper", "title": "A real title", "keywords": ["a", "b"], "abstract": "Long context."},
+    )
     assert response.status_code == 201
     data = response.json()
     assert data["paper_id"] == "new-paper"
     assert data["phase"] == "ideation"
+    assert data["title"] == "A real title"
+    assert data["keywords"] == ["a", "b"]
+    assert data["abstract"] == "Long context."
     assert (tmp_path / "new-paper" / "paper.yaml").exists()
 
 
 def test_create_paper_rejects_bad_slug(client):
-    response = client.post("/api/papers", json={"slug": "../escape", "topic": "x"})
+    response = client.post("/api/papers", json={"slug": "../escape", "title": "x"})
     assert response.status_code == 400
 
 
-def test_create_paper_rejects_empty_topic(client):
-    response = client.post("/api/papers", json={"slug": "demo", "topic": "   "})
+def test_create_paper_rejects_empty_title(client):
+    response = client.post("/api/papers", json={"slug": "demo", "title": "   "})
     assert response.status_code == 400
+
+
+def test_create_paper_rejects_overlong_title(client):
+    # This is the actual bug that broke literature_scout: a pasted abstract as
+    # the search-query field. Reject it at creation time with a clear message
+    # instead of letting it 400 out of OpenAlex three ideation steps later.
+    response = client.post("/api/papers", json={"slug": "demo", "title": "x" * 500})
+    assert response.status_code == 400
+    assert "abstract" in response.json()["detail"].lower()
 
 
 def test_create_paper_conflicts_on_existing_slug(tmp_path, client):
     _scaffold(tmp_path, "demo")
-    response = client.post("/api/papers", json={"slug": "demo", "topic": "x"})
+    response = client.post("/api/papers", json={"slug": "demo", "title": "x"})
     assert response.status_code == 409
 
 

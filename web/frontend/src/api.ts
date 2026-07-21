@@ -35,7 +35,9 @@ export interface FlowStatus {
 
 export interface PaperSummary {
   paper_id: string;
-  topic: string;
+  title: string;
+  keywords: string[];
+  abstract: string | null;
   venue: string | null;
   phase: string;
   status: string;
@@ -101,9 +103,16 @@ function postJSON<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+export interface CreatePaperInput {
+  slug: string;
+  title: string;
+  keywords: string[];
+  abstract: string | null;
+}
+
 export const api = {
   listPapers: () => request<PaperSummary[]>("/api/papers"),
-  createPaper: (slug: string, topic: string) => postJSON<PaperSummary>("/api/papers", { slug, topic }),
+  createPaper: (input: CreatePaperInput) => postJSON<PaperSummary>("/api/papers", input),
   getPaper: (slug: string) => request<PaperDetail>(`/api/papers/${slug}`),
   getFlow: (slug: string) => request<FlowStatus>(`/api/papers/${slug}/flow`),
   getProvenance: (slug: string) => request<ProvenanceEntry[]>(`/api/papers/${slug}/provenance`),

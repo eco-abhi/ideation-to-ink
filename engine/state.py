@@ -49,7 +49,9 @@ class PaperState(BaseModel):
     paper_id: str
     phase: Phase = "ideation"
 
-    topic: str
+    topic: str  # short, search-safe: doubles as the paper's working title
+    keywords: list[str] = Field(default_factory=list)
+    abstract: str | None = None  # long-form context; never used as a literal search query
     venue: str | None = None
     deadline: date | None = None
 

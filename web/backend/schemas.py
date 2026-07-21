@@ -40,7 +40,9 @@ class FlowStatus(BaseModel):
 
 class PaperSummary(BaseModel):
     paper_id: str
-    topic: str
+    title: str  # PaperState.topic under the hood -- see that field's docstring
+    keywords: list[str] = []
+    abstract: str | None = None
     venue: str | None = None
     phase: str
     status: str

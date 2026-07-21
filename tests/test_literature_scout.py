@@ -54,3 +54,38 @@ def test_literature_scout_dedupes_and_writes_corpus(tmp_path, monkeypatch):
     assert "Vehicle Routing under Uncertainty" in titles
     # only one of the two near-duplicate "Agentic Supply Chain(s)" titles should survive
     assert sum(1 for t in titles if t.startswith("Agentic Supply Chain")) == 1
+
+
+def test_long_abstract_never_becomes_a_literal_search_query(tmp_path, monkeypatch):
+    # Regression test: a pasted full-paper abstract as `topic` was sent verbatim
+    # to OpenAlex as a literal `search=` query and got a 400 Bad Request (query
+    # string several thousand characters long). topic is now contractually a
+    # short title; abstract/keywords are LLM context only, never a literal query.
+    monkeypatch.setattr(literature_scout, "call_llm_json", _fake_call_llm_json)
+
+    queries_seen: list[str] = []
+
+    def _record_and_search(q, limit):
+        queries_seen.append(q)
+        return []
+
+    monkeypatch.setattr(literature_scout.openalex, "search", _record_and_search)
+    monkeypatch.setattr(literature_scout.semanticscholar, "search", _record_and_search)
+    monkeypatch.setattr(literature_scout.arxiv, "search", _record_and_search)
+    monkeypatch.setattr(literature_scout.fs_guard, "PAPERS_ROOT", tmp_path)
+    (tmp_path / "demo").mkdir()
+
+    long_abstract = "This paper proposes a framework. " * 300  # several thousand chars
+    state = PaperState(
+        paper_id="demo",
+        topic="Criticality-Conditioned Schedule Compliance Prediction",
+        keywords=["ABC classification", "compliance prediction"],
+        abstract=long_abstract,
+    )
+    literature_scout.literature_scout(state)
+
+    assert queries_seen  # sanity: searches actually ran
+    for q in queries_seen:
+        assert q == state.topic or q in {"agentic exception handling", "supply chain LLM agents"}
+        assert long_abstract not in q
+        assert len(q) < 200

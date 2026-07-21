@@ -101,6 +101,18 @@ def _start_run(paper_id: str, *, target_phase: str | None, resume: bool) -> None
     thread.start()
 
 
+def _paper_summary_kwargs(doc: dict, live: dict | None = None) -> dict:
+    live = live or {}
+    return {
+        "title": live.get("topic", doc.get("topic", "")),
+        "keywords": live.get("keywords", doc.get("keywords", [])),
+        "abstract": live.get("abstract", doc.get("abstract")),
+        "venue": live.get("venue", doc.get("venue")),
+        "phase": live.get("phase", doc.get("phase", "ideation")),
+        "status": doc.get("status", "new"),
+    }
+
+
 @app.get("/api/papers", response_model=list[PaperSummary])
 def list_papers() -> list[PaperSummary]:
     if not PAPERS_ROOT.exists():
@@ -108,34 +120,38 @@ def list_papers() -> list[PaperSummary]:
     summaries = []
     for yaml_path in sorted(PAPERS_ROOT.glob("*/paper.yaml")):
         doc = yaml.safe_load(yaml_path.read_text())
-        summaries.append(
-            PaperSummary(
-                paper_id=doc["paper_id"],
-                topic=doc.get("topic", ""),
-                venue=doc.get("venue"),
-                phase=doc.get("phase", "ideation"),
-                status=doc.get("status", "new"),
-            )
-        )
+        summaries.append(PaperSummary(paper_id=doc["paper_id"], **_paper_summary_kwargs(doc)))
     return summaries
 
 
 class CreatePaperRequest(BaseModel):
     slug: str
-    topic: str
+    title: str
+    keywords: list[str] = []
+    abstract: str | None = None
+
+
+MAX_TITLE_LENGTH = 300  # title doubles as a literal literature-search query -- see literature_scout.py
 
 
 @app.post("/api/papers", response_model=PaperSummary, status_code=201)
 def create_paper(req: CreatePaperRequest) -> PaperSummary:
     _validate_slug(req.slug)
-    if not req.topic.strip():
-        raise HTTPException(status_code=400, detail="topic must not be empty")
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    if len(title) > MAX_TITLE_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"title must be under {MAX_TITLE_LENGTH} characters -- it's used as a literal search query "
+            "against literature APIs, not a place for the full abstract (use the Abstract field for that)",
+        )
     try:
-        scaffold_workspace(req.slug, topic=req.topic)
+        scaffold_workspace(req.slug, topic=title, keywords=req.keywords, abstract=req.abstract)
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     doc = _load_paper_yaml_or_404(req.slug)
-    return PaperSummary(paper_id=req.slug, topic=doc["topic"], venue=doc.get("venue"), phase=doc["phase"], status=doc["status"])
+    return PaperSummary(paper_id=req.slug, **_paper_summary_kwargs(doc))
 
 
 @app.get("/api/papers/{paper_id}", response_model=PaperDetail)
@@ -151,10 +167,7 @@ def get_paper(paper_id: str) -> PaperDetail:
 
     return PaperDetail(
         paper_id=paper_id,
-        topic=(live or {}).get("topic", doc.get("topic", "")),
-        venue=(live or {}).get("venue", doc.get("venue")),
-        phase=(live or {}).get("phase", doc.get("phase", "ideation")),
-        status=doc.get("status", "new"),
+        **_paper_summary_kwargs(doc, live),
         revision_loop_count=(live or {}).get("revision_loop_count", 0),
         errors=(live or {}).get("errors", []),
         artifacts=(live or {}).get("artifacts", {}),

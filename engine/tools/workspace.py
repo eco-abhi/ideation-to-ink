@@ -23,6 +23,8 @@ def scaffold_workspace(
     slug: str,
     *,
     topic: str,
+    keywords: list[str] | None = None,
+    abstract: str | None = None,
     phase: str = "ideation",
     status: str = "new",
     extra_yaml: dict | None = None,
@@ -30,6 +32,11 @@ def scaffold_workspace(
     """Create papers/<slug>/ with the standard subdirectories and a paper.yaml.
     Raises if the workspace already exists -- callers that want to add to an
     existing workspace (e.g. import onto a pre-scaffolded slug) should check first.
+
+    `topic` doubles as the paper's short working title -- it's what
+    literature_scout uses as a literal search query, so keep it short.
+    `abstract`/`keywords` are long-form context for LLM prompts only, never
+    sent to a search API as-is.
     """
     pdir = paper_dir(slug)
     if pdir.exists():
@@ -45,6 +52,8 @@ def scaffold_workspace(
     paper_yaml = {
         "paper_id": slug,
         "topic": topic,
+        "keywords": keywords or [],
+        "abstract": abstract,
         "venue": None,
         "deadline": None,
         "phase": phase,

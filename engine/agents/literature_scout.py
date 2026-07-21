@@ -28,11 +28,17 @@ class QueryExpansion(BaseModel):
     queries: list[str] = Field(min_length=1, max_length=4)
 
 
-def _expand_queries(topic: str) -> tuple[list[str], str, int, int, float | None]:
+def _expand_queries(
+    topic: str, *, keywords: list[str], abstract: str | None
+) -> tuple[list[str], str, int, int, float | None]:
     system_prompt = build_system_prompt(
         skills=["literature-search"],
         local_suffix="literature_scout",
-        context={"topic": topic},
+        context={
+            "topic": topic,
+            "keywords": ", ".join(keywords) or "(none provided)",
+            "abstract": abstract or "(none provided -- work from the topic alone)",
+        },
     )
     expansion, llm_result = call_llm_json(
         [
@@ -42,6 +48,11 @@ def _expand_queries(topic: str) -> tuple[list[str], str, int, int, float | None]
         agent_name=AGENT_NAME,
         schema=QueryExpansion,
     )
+    # `topic` is the paper's short working title by contract (see PaperState) --
+    # safe to use as a literal query. abstract/keywords only ever reach the LLM
+    # above for context, never a search API directly: a multi-paragraph abstract
+    # sent as a literal `search=` query is exactly what broke this (400 Bad
+    # Request from OpenAlex on a several-thousand-character query string).
     queries = [topic, *expansion.queries]
     return queries, llm_result.model, llm_result.prompt_tokens, llm_result.completion_tokens, llm_result.cost_usd
 
@@ -68,7 +79,9 @@ def _dedupe(results: list[SearchResult]) -> list[SearchResult]:
 
 
 def literature_scout(state: PaperState) -> NodeResult:
-    queries, model, prompt_tokens, completion_tokens, cost_usd = _expand_queries(state.topic)
+    queries, model, prompt_tokens, completion_tokens, cost_usd = _expand_queries(
+        state.topic, keywords=state.keywords, abstract=state.abstract
+    )
 
     all_results: list[SearchResult] = []
     for query in queries:

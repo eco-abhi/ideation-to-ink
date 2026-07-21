@@ -5,7 +5,8 @@ import { CostTable } from "../components/CostTable";
 import { GatePanel } from "../components/GatePanel";
 
 const POLL_INTERVAL_MS = 3000;
-const TOPIC_COLLAPSE_LENGTH = 220;
+const ABSTRACT_COLLAPSE_LENGTH = 260;
+const SIDEBAR_WIDTH = 360; // tuned for a laptop viewport (~1280-1440px) alongside a max-width: 1180 shell
 
 // Matches PHASE_ENTRY's user-restartable keys in engine/graphs/master.py --
 // "revision" (mid-loop) and "done" (nothing to re-enter) aren't valid targets.
@@ -25,7 +26,6 @@ export function PaperDetail({ paperId, onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [rerunPhase, setRerunPhase] = useState<(typeof RERUN_PHASES)[number]>("ideation");
-  const [topicExpanded, setTopicExpanded] = useState(false);
 
   const refresh = useCallback(() => {
     return Promise.all([api.getPaper(paperId), api.getFlow(paperId), api.getCosts(paperId), api.getProvenance(paperId)])
@@ -99,44 +99,17 @@ export function PaperDetail({ paperId, onBack }: Props) {
   const canRun = detail && !detail.running && !detail.paused && detail.phase !== "done";
   const canRerun = detail && !detail.running;
 
-  const topic = detail?.topic ?? "";
-  const topicIsLong = topic.length > TOPIC_COLLAPSE_LENGTH;
-  const topicShown = topicIsLong && !topicExpanded ? topic.slice(0, TOPIC_COLLAPSE_LENGTH).trimEnd() + "…" : topic;
-
   return (
     <div>
       <button onClick={onBack} style={{ marginBottom: 16 }}>
         ← All papers
       </button>
 
-      <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <h2 style={{ margin: 0, fontFamily: "ui-monospace, Consolas, monospace", fontSize: 18 }}>{paperId}</h2>
           <StatusPill detail={detail} />
         </div>
-
-        {error && <p style={{ color: "var(--status-critical)", fontSize: 13 }}>{error}</p>}
-
-        {detail && (
-          <>
-            <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: "10px 0", whiteSpace: "pre-wrap" }}>
-              {topicShown}
-              {topicIsLong && (
-                <button
-                  onClick={() => setTopicExpanded((v) => !v)}
-                  style={{ marginLeft: 8, padding: "2px 8px", fontSize: 11, verticalAlign: "middle" }}
-                >
-                  {topicExpanded ? "Show less" : "Show more"}
-                </button>
-              )}
-            </p>
-            {detail.revision_loop_count > 0 && (
-              <p style={{ fontSize: 12, color: "var(--status-warning)", margin: "0 0 8px" }}>
-                Revision loop {detail.revision_loop_count}/3
-              </p>
-            )}
-          </>
-        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           {canRun && (
@@ -144,7 +117,6 @@ export function PaperDetail({ paperId, onBack }: Props) {
               {actionPending ? "Starting..." : detail?.status === "new" ? "Run pipeline" : "Continue run"}
             </button>
           )}
-
           {canRerun && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Rerun from:</span>
@@ -163,31 +135,97 @@ export function PaperDetail({ paperId, onBack }: Props) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, marginTop: 16 }}>
+      {error && <p style={{ color: "var(--status-critical)", fontSize: 13 }}>{error}</p>}
+
+      {/* Side-by-side for a laptop screen: graph gets the remaining space, the
+          sidebar (paper attributes + node/gate detail) holds a fixed comfortable
+          width instead of squeezing into a narrower fraction. */}
+      <div style={{ display: "grid", gridTemplateColumns: `1fr ${SIDEBAR_WIDTH}px`, gap: 16, alignItems: "start" }}>
         <div>{flow && <FlowGraph flow={flow} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} />}</div>
-        <div style={{ ...cardStyle, margin: 0, alignSelf: "start" }}>
-          {flow?.paused_gate && selectedNodeId !== flow.paused_gate && (
-            <button
-              onClick={() => setSelectedNodeId(flow.paused_gate)}
-              style={{ marginBottom: 12, width: "100%", borderColor: "var(--status-warning)", color: "var(--status-warning)" }}
-            >
-              ⏸ Paused at {flow.paused_gate} — respond
-            </button>
-          )}
-          {flow && (
-            <GatePanel
-              flow={flow}
-              selectedNodeId={selectedNodeId}
-              provenance={provenance}
-              onRespond={handleRespond}
-              responding={actionPending}
-            />
-          )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <PaperAttributes detail={detail} />
+
+          <div style={cardStyle}>
+            {flow?.paused_gate && selectedNodeId !== flow.paused_gate && (
+              <button
+                onClick={() => setSelectedNodeId(flow.paused_gate)}
+                style={{ marginBottom: 12, width: "100%", borderColor: "var(--status-warning)", color: "var(--status-warning)" }}
+              >
+                ⏸ Paused at {flow.paused_gate} — respond
+              </button>
+            )}
+            {flow && (
+              <GatePanel
+                flow={flow}
+                selectedNodeId={selectedNodeId}
+                provenance={provenance}
+                onRespond={handleRespond}
+                responding={actionPending}
+              />
+            )}
+          </div>
         </div>
       </div>
 
       <h3 style={{ marginTop: 24 }}>Cost & Usage</h3>
       <div style={cardStyle}>{costs && <CostTable costs={costs} />}</div>
+    </div>
+  );
+}
+
+function PaperAttributes({ detail }: { detail: PaperDetailT | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!detail) return null;
+
+  const abstract = detail.abstract ?? "";
+  const isLong = abstract.length > ABSTRACT_COLLAPSE_LENGTH;
+  const shown = isLong && !expanded ? abstract.slice(0, ABSTRACT_COLLAPSE_LENGTH).trimEnd() + "…" : abstract;
+
+  return (
+    <div style={cardStyle}>
+      <h4 style={{ margin: "0 0 8px", fontSize: 13, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+        Paper
+      </h4>
+      <p style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600 }}>{detail.title}</p>
+
+      {detail.keywords.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          {detail.keywords.map((k) => (
+            <span
+              key={k}
+              style={{
+                fontSize: 11,
+                color: "var(--text-secondary)",
+                border: "1px solid var(--gridline)",
+                borderRadius: 999,
+                padding: "2px 8px",
+              }}
+            >
+              {k}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {abstract ? (
+        <p style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "pre-wrap", margin: 0 }}>
+          {shown}
+          {isLong && (
+            <button onClick={() => setExpanded((v) => !v)} style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}>
+              {expanded ? "Show less" : "Show more"}
+            </button>
+          )}
+        </p>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>No abstract provided.</p>
+      )}
+
+      {detail.revision_loop_count > 0 && (
+        <p style={{ fontSize: 12, color: "var(--status-warning)", margin: "10px 0 0" }}>
+          Revision loop {detail.revision_loop_count}/3
+        </p>
+      )}
     </div>
   );
 }
