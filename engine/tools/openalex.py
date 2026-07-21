@@ -13,6 +13,7 @@ BASE_URL = "https://api.openalex.org/works"
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type(httpx.HTTPError),
+    reraise=True,
 )
 def _fetch(query: str, limit: int) -> list[dict]:
     resp = httpx.get(BASE_URL, params={"search": query, "per_page": limit}, timeout=20)

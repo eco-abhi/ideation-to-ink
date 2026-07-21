@@ -16,6 +16,7 @@ ATOM_NS = "{http://www.w3.org/2005/Atom}"
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type(httpx.HTTPError),
+    reraise=True,
 )
 def _fetch_search(query: str, limit: int) -> str:
     resp = httpx.get(
@@ -29,6 +30,7 @@ def _fetch_search(query: str, limit: int) -> str:
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type(httpx.HTTPError),
+    reraise=True,
 )
 def _fetch_by_id(arxiv_id: str) -> str:
     resp = httpx.get(BASE_URL, params={"id_list": arxiv_id}, timeout=20)

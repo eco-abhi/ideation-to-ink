@@ -21,6 +21,7 @@ def _headers() -> dict[str, str]:
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type(httpx.HTTPError),
+    reraise=True,
 )
 def _fetch_by_doi(doi: str) -> dict | None:
     resp = httpx.get(f"{BASE_URL}/{doi}", headers=_headers(), timeout=20)
@@ -34,6 +35,7 @@ def _fetch_by_doi(doi: str) -> dict | None:
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type(httpx.HTTPError),
+    reraise=True,
 )
 def _fetch_search(query: str, limit: int) -> list[dict]:
     resp = httpx.get(

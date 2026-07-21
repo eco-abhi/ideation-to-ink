@@ -124,3 +124,22 @@ def test_crossref_get_by_doi(monkeypatch):
 def test_crossref_get_by_doi_not_found(monkeypatch):
     monkeypatch.setattr(crossref, "_fetch_by_doi", lambda doi: None)
     assert crossref.get_by_doi("10.1/fake-hallucinated-doi") is None
+
+
+def test_all_retry_decorators_reraise_the_real_exception():
+    # Regression test: tenacity wraps the final exception in an opaque
+    # RetryError by default (RetryError[<Future ... raised HTTPStatusError>]),
+    # hiding the actual status code/URL. reraise=True makes it propagate the
+    # real exception instead -- this is the config property that was missing,
+    # not something worth simulating real network retries (with real backoff
+    # delays) to exercise.
+    decorated_fetch_fns = [
+        openalex._fetch,
+        semanticscholar._fetch,
+        arxiv._fetch_search,
+        arxiv._fetch_by_id,
+        crossref._fetch_by_doi,
+        crossref._fetch_search,
+    ]
+    for fn in decorated_fetch_fns:
+        assert fn.retry.reraise is True, f"{fn.__module__}.{fn.__name__} doesn't reraise the real exception"
