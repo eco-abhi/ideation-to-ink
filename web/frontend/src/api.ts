@@ -50,6 +50,7 @@ export interface PaperDetail extends PaperSummary {
   paused: boolean;
   gate_payload: Record<string, unknown> | null;
   running: boolean;
+  import_error: string | null;
 }
 
 export interface ProvenanceEntry {
@@ -110,9 +111,18 @@ export interface CreatePaperInput {
   abstract: string | null;
 }
 
+export interface ImportPaperInput {
+  slug: string;
+  title: string | null;
+  full_text: string;
+  bibliography: string | null;
+}
+
 export const api = {
   listPapers: () => request<PaperSummary[]>("/api/papers"),
   createPaper: (input: CreatePaperInput) => postJSON<PaperSummary>("/api/papers", input),
+  importPaper: (input: ImportPaperInput) =>
+    postJSON<{ status: string }>(`/api/papers/${input.slug}/import`, input),
   getPaper: (slug: string) => request<PaperDetail>(`/api/papers/${slug}`),
   getFlow: (slug: string) => request<FlowStatus>(`/api/papers/${slug}/flow`),
   getProvenance: (slug: string) => request<ProvenanceEntry[]>(`/api/papers/${slug}/provenance`),

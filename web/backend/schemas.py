@@ -55,3 +55,4 @@ class PaperDetail(PaperSummary):
     paused: bool = False
     gate_payload: dict[str, Any] | None = None
     running: bool = False
+    import_error: str | None = None  # set if the last "paste a paper" import raised; see app.py's _import_errors

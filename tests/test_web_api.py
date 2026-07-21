@@ -291,3 +291,88 @@ def test_respond_to_gate_rejects_empty_body(tmp_path, client):
     _scaffold(tmp_path, "demo")
     response = client.post("/api/papers/demo/respond", json={})
     assert response.status_code == 400
+
+
+# --- paste-a-whole-paper import ---
+
+
+def _mock_import_pasted_text(monkeypatch, *, started: threading.Event, finished: threading.Event, calls: list):
+    def fake_import_pasted_text(paper_id, *, title=None, full_text="", bibliography=None):
+        calls.append({"paper_id": paper_id, "title": title, "full_text": full_text, "bibliography": bibliography})
+        started.set()
+        finished.wait(timeout=5)
+
+    monkeypatch.setattr("engine.agents.importer.import_pasted_text", fake_import_pasted_text)
+
+
+def test_import_paper_route_executes_in_background(client, monkeypatch):
+    # Deliberately no pre-existing workspace -- import_pasted_text scaffolds one
+    # if the slug doesn't exist yet, same as create_paper.
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_import_pasted_text(monkeypatch, started=started, finished=finished, calls=calls)
+
+    response = client.post(
+        "/api/papers/pasted-demo/import",
+        json={"slug": "pasted-demo", "title": "A Title", "full_text": "Paste of the whole paper.", "bibliography": None},
+    )
+    assert response.status_code == 202
+    assert started.wait(timeout=2)
+
+    finished.set()
+    _wait_until_not_running("pasted-demo")
+    assert calls == [
+        {"paper_id": "pasted-demo", "title": "A Title", "full_text": "Paste of the whole paper.", "bibliography": None}
+    ]
+
+
+def test_import_paper_route_rejects_empty_full_text(client):
+    response = client.post(
+        "/api/papers/demo/import", json={"slug": "demo", "title": "x", "full_text": "   ", "bibliography": None}
+    )
+    assert response.status_code == 400
+
+
+def test_import_paper_route_rejects_slug_mismatch(client):
+    response = client.post(
+        "/api/papers/demo/import", json={"slug": "other-slug", "title": "x", "full_text": "text", "bibliography": None}
+    )
+    assert response.status_code == 400
+
+
+def test_import_paper_route_surfaces_failure_via_import_error(tmp_path, client, monkeypatch):
+    def fake_import_pasted_text(paper_id, *, title=None, full_text="", bibliography=None):
+        raise RuntimeError("LLM call failed")
+
+    monkeypatch.setattr("engine.agents.importer.import_pasted_text", fake_import_pasted_text)
+    # import_pasted_text scaffolds the workspace itself in the real implementation;
+    # since it's mocked out here, seed one so GET /api/papers/{id} has something to read.
+    _scaffold(tmp_path, "demo")
+
+    response = client.post(
+        "/api/papers/demo/import", json={"slug": "demo", "title": "x", "full_text": "text", "bibliography": None}
+    )
+    assert response.status_code == 202
+    _wait_until_not_running("demo")
+
+    detail = client.get("/api/papers/demo").json()
+    assert "RuntimeError" in detail["import_error"]
+    assert "LLM call failed" in detail["import_error"]
+
+
+def test_import_paper_route_rejects_concurrent_run(client, monkeypatch):
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_import_pasted_text(monkeypatch, started=started, finished=finished, calls=calls)
+
+    first = client.post(
+        "/api/papers/demo/import", json={"slug": "demo", "title": "x", "full_text": "text", "bibliography": None}
+    )
+    assert first.status_code == 202
+    assert started.wait(timeout=2)
+
+    second = client.post(
+        "/api/papers/demo/import", json={"slug": "demo", "title": "x", "full_text": "text", "bibliography": None}
+    )
+    assert second.status_code == 409
+
+    finished.set()
+    _wait_until_not_running("demo")

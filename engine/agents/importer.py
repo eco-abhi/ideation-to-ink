@@ -17,6 +17,7 @@ the reducer-field merge semantics LangGraph would otherwise provide.
 from __future__ import annotations
 
 import re
+import tempfile
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -46,6 +47,43 @@ def _apply_update(state: PaperState, update: dict) -> PaperState:
 
 class ExtractedClaims(BaseModel):
     claims: list[str] = Field(default_factory=list)
+
+
+DEFAULT_CHUNK_CHARS = 4000  # comfortably under _extract_claims_for_section's 6000-char cap
+
+
+def chunk_text(text: str, *, max_chars: int = DEFAULT_CHUNK_CHARS) -> list[str]:
+    """Split raw pasted text into paragraph-respecting chunks, each safely under
+    _extract_claims_for_section's per-call truncation cap. Exists so a whole
+    pasted paper gets fully scanned for claims rather than just its first
+    section-sized chunk -- see import_pasted_text()'s docstring.
+    """
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    def _flush() -> None:
+        if current:
+            chunks.append("\n\n".join(current))
+
+    for para in paragraphs:
+        if len(para) > max_chars:
+            # a single paragraph alone exceeds the cap (e.g. no blank lines at
+            # all) -- flush what's pending, then hard-split this one on its own
+            _flush()
+            current, current_len = [], 0
+            for i in range(0, len(para), max_chars):
+                chunks.append(para[i : i + max_chars])
+            continue
+        if current_len + len(para) > max_chars and current:
+            _flush()
+            current, current_len = [], 0
+        current.append(para)
+        current_len += len(para)
+
+    _flush()
+    return chunks or [text]
 
 
 def _extract_title(tex_text: str) -> str | None:
@@ -113,18 +151,19 @@ def _extract_claims_for_section(section_name: str, latex: str) -> list[Claim]:
     ]
 
 
-def import_paper(slug: str, *, source_dir: str) -> PaperState:
+def import_paper(slug: str, *, source_dir: str, title_hint: str | None = None) -> PaperState:
     src = Path(source_dir)
     if not src.exists():
         raise FileNotFoundError(f"--from {source_dir} does not exist")
 
     pdir = paper_dir(slug)
     if not pdir.exists():
-        title = None
-        for tex_file in sorted(src.rglob("*.tex")):
-            title = _extract_title(tex_file.read_text(errors="replace"))
-            if title:
-                break
+        title = title_hint
+        if not title:
+            for tex_file in sorted(src.rglob("*.tex")):
+                title = _extract_title(tex_file.read_text(errors="replace"))
+                if title:
+                    break
         scaffold_workspace(slug, topic=title or slug.replace("-", " "), phase="ideation", status="imported")
 
     section_names = _copy_sections(src, slug)
@@ -175,3 +214,28 @@ def import_paper(slug: str, *, source_dir: str) -> PaperState:
     retro_state = _apply_update(retro_state, fc_result.update)
 
     return retro_state
+
+
+def import_pasted_text(slug: str, *, title: str | None, full_text: str, bibliography: str | None) -> PaperState:
+    """Entry point for "paste your whole paper" review (the dashboard's Import
+    tab) -- everything else in this module assumes real files on disk from
+    `--from <dir>`. Chunks full_text into multiple pseudo-section files first
+    (see chunk_text()) rather than importing it as one giant section: without
+    that, _extract_claims_for_section's 6000-char truncation would silently
+    only scan roughly the first page of a real paper for claims, and "review
+    a paper with an AI agent" would quietly only review its introduction.
+    Chunks are generic (section_01, section_02, ...), not real section names --
+    a full heading-detection pass (Introduction/Methods/Results/...) is future
+    work if the generic chunking proves too coarse for flow_checker's
+    reverse-outline comparison.
+    """
+    if not full_text.strip():
+        raise ValueError("full_text must not be empty")
+
+    with tempfile.TemporaryDirectory(prefix=f"import-{slug}-") as tmp:
+        tmp_path = Path(tmp)
+        for i, chunk in enumerate(chunk_text(full_text), start=1):
+            (tmp_path / f"section_{i:02d}.tex").write_text(chunk)
+        if bibliography and bibliography.strip():
+            (tmp_path / "refs.bib").write_text(bibliography)
+        return import_paper(slug, source_dir=str(tmp_path), title_hint=title)

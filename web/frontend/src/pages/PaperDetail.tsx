@@ -136,6 +136,12 @@ export function PaperDetail({ paperId, onBack }: Props) {
       </div>
 
       {error && <p style={{ color: "var(--status-critical)", fontSize: 13 }}>{error}</p>}
+      {detail?.import_error && !detail.running && (
+        <p style={{ color: "var(--status-critical)", fontSize: 13 }}>
+          Import failed: {detail.import_error} — nothing else in this workspace was touched; try again from "Import
+          existing paper" on the papers list.
+        </p>
+      )}
 
       {/* Side-by-side for a laptop screen: graph gets the remaining space, the
           sidebar (paper attributes + node/gate detail) holds a fixed comfortable

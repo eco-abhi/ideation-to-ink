@@ -100,3 +100,83 @@ def test_import_backfills_state_and_catches_fake_citation(tmp_path, monkeypatch)
     statuses = {r.bib_key: r.status for r in final_state.citation_records}
     assert statuses["fake2099nonexistent"] == "hallucinated"
     assert statuses["real2023arxiv"] == "verified"
+
+
+# --- chunk_text ---
+
+
+def test_chunk_text_short_input_is_one_chunk():
+    assert importer.chunk_text("A short paper idea.", max_chars=4000) == ["A short paper idea."]
+
+
+def test_chunk_text_splits_on_paragraph_boundaries_under_the_cap():
+    paragraphs = [f"Paragraph {i}. " + ("word " * 100) for i in range(20)]  # ~700 chars each
+    text = "\n\n".join(paragraphs)
+    chunks = importer.chunk_text(text, max_chars=2000)
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert len(chunk) <= 2000
+    # nothing lost: every paragraph's distinctive marker survives somewhere
+    for i in range(20):
+        assert any(f"Paragraph {i}." in c for c in chunks)
+
+
+def test_chunk_text_hard_splits_a_single_oversized_paragraph_with_no_blank_lines():
+    huge_single_paragraph = "x" * 10_000  # no blank lines anywhere
+    chunks = importer.chunk_text(huge_single_paragraph, max_chars=4000)
+
+    assert len(chunks) == 3  # 4000 + 4000 + 2000
+    assert all(len(c) <= 4000 for c in chunks)
+    assert "".join(chunks) == huge_single_paragraph
+
+
+# --- import_pasted_text ---
+
+
+def _isolate_importer_modules(tmp_path, monkeypatch):
+    import engine.tools.workspace as workspace_mod
+
+    for mod in (importer, citation_verifier, flow_checker):
+        monkeypatch.setattr(mod, "paper_dir", lambda slug: tmp_path / "papers" / slug)
+    monkeypatch.setattr(workspace_mod, "paper_dir", lambda slug: tmp_path / "papers" / slug)
+    monkeypatch.setattr(importer.fs_guard, "PAPERS_ROOT", tmp_path / "papers")
+    monkeypatch.setattr(flow_checker.fs_guard, "PAPERS_ROOT", tmp_path / "papers")
+    monkeypatch.setattr(importer, "call_llm_json", _fake_call_llm_json)
+    monkeypatch.setattr(flow_checker, "call_llm_json", _fake_call_llm_json)
+    monkeypatch.setattr(claims_evidence_auditor, "call_llm_json", _fake_claims_audit)
+
+
+def test_import_pasted_text_scans_every_chunk_not_just_the_first(tmp_path, monkeypatch):
+    _isolate_importer_modules(tmp_path, monkeypatch)
+
+    seen_sections: list[str] = []
+
+    def _tracking_call_llm_json(messages, *, agent_name, schema, **kwargs):
+        if schema is importer.ExtractedClaims:
+            # the section name is baked into the local-suffix prompt via build_system_prompt
+            seen_sections.append(messages[0]["content"])
+            return schema(claims=[f"Claim from a chunk (call #{len(seen_sections)})"]), _llm_result()
+        return _fake_call_llm_json(messages, agent_name=agent_name, schema=schema, **kwargs)
+
+    monkeypatch.setattr(importer, "call_llm_json", _tracking_call_llm_json)
+
+    # Big enough to force multiple chunks at the default 4000-char cap.
+    full_text = "\n\n".join(f"Paragraph {i} of the paper. " + ("content " * 80) for i in range(20))
+    assert len(full_text) > importer.DEFAULT_CHUNK_CHARS * 2  # sanity: this really does need >1 chunk
+
+    final_state = importer.import_pasted_text(
+        "pasted-demo", title="A Pasted Paper Title", full_text=full_text, bibliography=None
+    )
+
+    assert len(seen_sections) > 1, "only one chunk was scanned -- the whole-paper-review bug is back"
+    assert final_state.topic == "A Pasted Paper Title"
+    assert final_state.phase == "review"
+    assert len(final_state.claims) == len(seen_sections)  # one claim extracted per chunk
+
+
+def test_import_pasted_text_rejects_empty_input():
+    import pytest
+
+    with pytest.raises(ValueError, match="empty"):
+        importer.import_pasted_text("demo", title=None, full_text="   ", bibliography=None)

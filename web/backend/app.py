@@ -48,6 +48,12 @@ _SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 _running_lock = threading.Lock()
 _running: set[str] = set()
 
+# import_pasted_text() doesn't go through the LangGraph checkpoint/interrupt
+# machinery the way run_paper() does, so a failure has nowhere to land as a
+# HUMAN_INPUT_NEEDED.json-style gate -- tracked here instead and surfaced via
+# PaperDetail.import_error, cleared at the start of the next import attempt.
+_import_errors: dict[str, str] = {}
+
 
 def _validate_slug(slug: str) -> None:
     if not _SLUG_RE.match(slug):
@@ -99,6 +105,18 @@ def _start_run(paper_id: str, *, target_phase: str | None, resume: bool) -> None
         target=_run_in_background, args=(paper_id,), kwargs={"target_phase": target_phase, "resume": resume}, daemon=True
     )
     thread.start()
+
+
+def _import_in_background(paper_id: str, *, title: str | None, full_text: str, bibliography: str | None) -> None:
+    from engine.agents.importer import import_pasted_text
+
+    try:
+        import_pasted_text(paper_id, title=title, full_text=full_text, bibliography=bibliography)
+    except Exception as exc:  # noqa: BLE001 -- surfaced via import_error, not left to crash silently in a thread
+        _import_errors[paper_id] = f"{exc.__class__.__name__}: {exc}"
+    finally:
+        with _running_lock:
+            _running.discard(paper_id)
 
 
 def _paper_summary_kwargs(doc: dict, live: dict | None = None) -> dict:
@@ -154,6 +172,44 @@ def create_paper(req: CreatePaperRequest) -> PaperSummary:
     return PaperSummary(paper_id=req.slug, **_paper_summary_kwargs(doc))
 
 
+class ImportPaperRequest(BaseModel):
+    slug: str
+    title: str | None = None
+    full_text: str
+    bibliography: str | None = None
+
+
+@app.post("/api/papers/{paper_id}/import", status_code=202)
+def import_paper_route(paper_id: str, req: ImportPaperRequest) -> dict:
+    """Paste-a-whole-paper review: chunks req.full_text (see
+    engine.agents.importer.chunk_text) so the retroactive claims/citation/flow
+    gates scan the entire paste, not just a first-6000-char slice, then runs
+    citation_verifier + claims_evidence_auditor + flow_checker against it --
+    same retroactive-review path `engine import --from <dir>` uses for real
+    files, just fed pasted text instead. Backgrounded like /run: this makes
+    several real LLM calls (one per chunk) and can take a while.
+    """
+    if paper_id != req.slug:
+        raise HTTPException(status_code=400, detail="paper_id in the URL must match the request body's slug")
+    _validate_slug(paper_id)
+    if not req.full_text.strip():
+        raise HTTPException(status_code=400, detail="full_text must not be empty")
+
+    with _running_lock:
+        if paper_id in _running:
+            raise HTTPException(status_code=409, detail=f"a run is already in progress for {paper_id!r}")
+        _running.add(paper_id)
+        _import_errors.pop(paper_id, None)
+    thread = threading.Thread(
+        target=_import_in_background,
+        args=(paper_id,),
+        kwargs={"title": req.title, "full_text": req.full_text, "bibliography": req.bibliography},
+        daemon=True,
+    )
+    thread.start()
+    return {"status": "importing"}
+
+
 @app.get("/api/papers/{paper_id}", response_model=PaperDetail)
 def get_paper(paper_id: str) -> PaperDetail:
     doc = _load_paper_yaml_or_404(paper_id)
@@ -164,6 +220,7 @@ def get_paper(paper_id: str) -> PaperDetail:
 
     with _running_lock:
         running = paper_id in _running
+        import_error = _import_errors.get(paper_id)
 
     return PaperDetail(
         paper_id=paper_id,
@@ -174,6 +231,7 @@ def get_paper(paper_id: str) -> PaperDetail:
         paused=gate_payload is not None and not running,
         gate_payload=gate_payload if not running else None,
         running=running,
+        import_error=import_error,
     )
 
 
