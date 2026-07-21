@@ -6,6 +6,10 @@ import { GatePanel } from "../components/GatePanel";
 
 const POLL_INTERVAL_MS = 3000;
 
+// Matches PHASE_ENTRY's user-restartable keys in engine/graphs/master.py --
+// "revision" (mid-loop) and "done" (nothing to re-enter) aren't valid targets.
+const RERUN_PHASES = ["ideation", "experiments", "writing", "review"] as const;
+
 interface Props {
   paperId: string;
   onBack: () => void;
@@ -19,6 +23,7 @@ export function PaperDetail({ paperId, onBack }: Props) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [rerunPhase, setRerunPhase] = useState<(typeof RERUN_PHASES)[number]>("ideation");
 
   const refresh = useCallback(() => {
     return Promise.all([api.getPaper(paperId), api.getFlow(paperId), api.getCosts(paperId), api.getProvenance(paperId)])
@@ -43,17 +48,27 @@ export function PaperDetail({ paperId, onBack }: Props) {
     };
   }, [refresh]);
 
-  const handleRun = async () => {
+  const runWithPhase = async (phase?: string) => {
     setActionPending(true);
     setError(null);
     try {
-      await api.triggerRun(paperId);
+      await api.triggerRun(paperId, phase);
       await refresh();
     } catch (e) {
       setError(String(e));
     } finally {
       setActionPending(false);
     }
+  };
+
+  const handleRun = () => runWithPhase();
+
+  const handleRerun = () => {
+    const confirmed = window.confirm(
+      `Force entry at "${rerunPhase}" and re-run from there? This re-executes agents (real API calls/cost) ` +
+        `and can overwrite that phase's artifacts. Later-phase results already on disk aren't cleared automatically.`,
+    );
+    if (confirmed) void runWithPhase(rerunPhase);
   };
 
   const handleRespond = async (response: Record<string, unknown>) => {
@@ -70,6 +85,7 @@ export function PaperDetail({ paperId, onBack }: Props) {
   };
 
   const canRun = detail && !detail.running && !detail.paused && detail.phase !== "done";
+  const canRerun = detail && !detail.running;
 
   return (
     <div>
@@ -86,11 +102,31 @@ export function PaperDetail({ paperId, onBack }: Props) {
           {detail.revision_loop_count > 0 && ` — revision loop ${detail.revision_loop_count}/3`}
         </p>
       )}
-      {canRun && (
-        <button onClick={handleRun} disabled={actionPending} style={{ marginBottom: 12 }}>
-          {actionPending ? "Starting..." : detail?.status === "new" ? "Run pipeline" : "Continue run"}
-        </button>
-      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
+        {canRun && (
+          <button onClick={handleRun} disabled={actionPending}>
+            {actionPending ? "Starting..." : detail?.status === "new" ? "Run pipeline" : "Continue run"}
+          </button>
+        )}
+
+        {canRerun && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 13, color: "#64748b" }}>Rerun from:</span>
+            <select value={rerunPhase} onChange={(e) => setRerunPhase(e.target.value as typeof rerunPhase)}>
+              {RERUN_PHASES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            <button onClick={handleRerun} disabled={actionPending}>
+              {actionPending ? "Starting..." : "Rerun"}
+            </button>
+          </div>
+        )}
+      </div>
+
       {detail?.running && <p style={{ color: "#f59e0b", fontSize: 13 }}>Running in the background — this page polls every 3s.</p>}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>

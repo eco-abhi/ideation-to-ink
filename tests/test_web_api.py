@@ -225,6 +225,21 @@ def test_trigger_run_executes_in_background_and_reports_running(tmp_path, client
     assert calls == [{"paper_id": "demo", "target_phase": None, "resume": False}]
 
 
+def test_trigger_run_with_explicit_phase_forces_reentry(tmp_path, client, monkeypatch):
+    # This is the "rerun from phase X" UI control's actual mechanism.
+    _scaffold(tmp_path, "demo", phase="done", status="done")
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_run_paper(monkeypatch, started=started, finished=finished, calls=calls)
+
+    response = client.post("/api/papers/demo/run", json={"phase": "writing"})
+    assert response.status_code == 202
+    assert started.wait(timeout=2)
+
+    finished.set()
+    _wait_until_not_running("demo")
+    assert calls == [{"paper_id": "demo", "target_phase": "writing", "resume": False}]
+
+
 def test_trigger_run_rejects_concurrent_run(tmp_path, client, monkeypatch):
     _scaffold(tmp_path, "demo")
     started, finished, calls = threading.Event(), threading.Event(), []
