@@ -28,7 +28,7 @@ class QueryExpansion(BaseModel):
     queries: list[str] = Field(min_length=1, max_length=4)
 
 
-def _expand_queries(topic: str) -> tuple[list[str], str, int, int]:
+def _expand_queries(topic: str) -> tuple[list[str], str, int, int, float | None]:
     system_prompt = build_system_prompt(
         skills=["literature-search"],
         local_suffix="literature_scout",
@@ -43,7 +43,7 @@ def _expand_queries(topic: str) -> tuple[list[str], str, int, int]:
         schema=QueryExpansion,
     )
     queries = [topic, *expansion.queries]
-    return queries, llm_result.model, llm_result.prompt_tokens, llm_result.completion_tokens
+    return queries, llm_result.model, llm_result.prompt_tokens, llm_result.completion_tokens, llm_result.cost_usd
 
 
 def _dedupe(results: list[SearchResult]) -> list[SearchResult]:
@@ -68,7 +68,7 @@ def _dedupe(results: list[SearchResult]) -> list[SearchResult]:
 
 
 def literature_scout(state: PaperState) -> NodeResult:
-    queries, model, prompt_tokens, completion_tokens = _expand_queries(state.topic)
+    queries, model, prompt_tokens, completion_tokens, cost_usd = _expand_queries(state.topic)
 
     all_results: list[SearchResult] = []
     for query in queries:
@@ -91,6 +91,7 @@ def literature_scout(state: PaperState) -> NodeResult:
         model=model,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
+        cost_usd=cost_usd,
         artifacts_written=[relpath],
         output_summary=(
             f"{len(queries)} queries -> {len(all_results)} raw results -> "

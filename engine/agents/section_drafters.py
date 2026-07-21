@@ -111,6 +111,7 @@ def section_drafters(state: PaperState) -> NodeResult:
     new_claims: list[Claim] = []
     artifacts_written: list[str] = []
     total_prompt_tokens = total_completion_tokens = 0
+    total_cost_usd = 0.0
     model_used: str | None = None
 
     for section_name in sections:
@@ -137,6 +138,7 @@ def section_drafters(state: PaperState) -> NodeResult:
         )
         total_prompt_tokens += llm_result.prompt_tokens
         total_completion_tokens += llm_result.completion_tokens
+        total_cost_usd += llm_result.cost_usd or 0.0
         model_used = llm_result.model
 
         relpath = f"manuscript/sections/{section_name}.tex"
@@ -167,6 +169,7 @@ def section_drafters(state: PaperState) -> NodeResult:
         model=model_used,
         prompt_tokens=total_prompt_tokens,
         completion_tokens=total_completion_tokens,
+        cost_usd=total_cost_usd,
         artifacts_written=artifacts_written,
         output_summary=f"drafted {len(sections)} sections, {len(all_citations)} proposed citations",
     )

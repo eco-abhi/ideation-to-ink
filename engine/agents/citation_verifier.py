@@ -169,6 +169,7 @@ def citation_verifier(state: PaperState) -> NodeResult:
     records: list[CitationRecord] = []
     verified_entries: list[dict] = []
     total_prompt_tokens = total_completion_tokens = 0
+    total_cost_usd = 0.0
     model_used: str | None = None
 
     for entry in db.entries:
@@ -195,6 +196,7 @@ def citation_verifier(state: PaperState) -> NodeResult:
                 )
                 total_prompt_tokens += llm_result.prompt_tokens
                 total_completion_tokens += llm_result.completion_tokens
+                total_cost_usd += llm_result.cost_usd or 0.0
                 model_used = llm_result.model
                 if not check.supports_claim:
                     record = CitationRecord(
@@ -251,6 +253,7 @@ def citation_verifier(state: PaperState) -> NodeResult:
         model=model_used,
         prompt_tokens=total_prompt_tokens,
         completion_tokens=total_completion_tokens,
+        cost_usd=total_cost_usd,
         artifacts_written=[FINAL_BIB_RELPATH, REPORT_RELPATH, *stripped_sections],
         output_summary=" | ".join(f"{k}={v}" for k, v in counts.items()),
     )

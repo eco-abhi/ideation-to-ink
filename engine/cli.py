@@ -34,6 +34,12 @@ def cmd_check(args: argparse.Namespace) -> None:
     run_single_agent(args.slug, agent_name=args.agent)
 
 
+def cmd_costs(args: argparse.Namespace) -> None:
+    from engine.provenance import format_usage_table
+
+    print(format_usage_table(args.slug, by_model=args.by_model))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m engine")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -58,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("slug")
     p_check.add_argument("--agent", required=True)
     p_check.set_defaults(func=cmd_check)
+
+    p_costs = sub.add_parser("costs", help="Show token usage and cost, aggregated from provenance/run_log.jsonl")
+    p_costs.add_argument("slug")
+    p_costs.add_argument("--by-model", action="store_true", help="Break down by agent+model instead of just agent")
+    p_costs.set_defaults(func=cmd_costs)
 
     return parser
 

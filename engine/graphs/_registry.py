@@ -61,6 +61,7 @@ def traced_node(
                 input_hash=input_hash,
                 output_summary=result.output_summary,
                 tokens={"prompt": result.prompt_tokens, "completion": result.completion_tokens},
+                cost_usd=result.cost_usd,
                 artifacts_written=result.artifacts_written,
                 duration_ms=duration_ms,
                 error=None,

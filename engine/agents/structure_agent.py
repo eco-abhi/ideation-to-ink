@@ -54,5 +54,6 @@ def structure_agent(state: PaperState) -> NodeResult:
         model=llm_result.model,
         prompt_tokens=llm_result.prompt_tokens,
         completion_tokens=llm_result.completion_tokens,
+        cost_usd=llm_result.cost_usd,
         output_summary=f"outline with {len(outline.sections)} sections",
     )

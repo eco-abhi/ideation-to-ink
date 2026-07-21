@@ -100,6 +100,7 @@ def novelty_checker(state: PaperState) -> NodeResult:
         model=llm_result.model,
         prompt_tokens=llm_result.prompt_tokens,
         completion_tokens=llm_result.completion_tokens,
+        cost_usd=llm_result.cost_usd,
         artifacts_written=[relpath],
         output_summary=f"verdict={verdict.verdict} overlap={overlap_score:.3f}",
     )

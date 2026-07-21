@@ -22,6 +22,7 @@ class NodeResult(BaseModel):
     model: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cost_usd: float | None = 0.0
     artifacts_written: list[str] = Field(default_factory=list)
     output_summary: str = ""
 

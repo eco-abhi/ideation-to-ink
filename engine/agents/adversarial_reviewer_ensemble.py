@@ -53,6 +53,7 @@ def adversarial_reviewer_ensemble(state: PaperState) -> NodeResult:
     all_major: list[str] = []
     all_minor: list[str] = []
     total_prompt_tokens = total_completion_tokens = 0
+    total_cost_usd = 0.0
     model_used: str | None = None
 
     for i, persona in enumerate(personas, start=1):
@@ -77,6 +78,7 @@ def adversarial_reviewer_ensemble(state: PaperState) -> NodeResult:
         )
         total_prompt_tokens += llm_result.prompt_tokens
         total_completion_tokens += llm_result.completion_tokens
+        total_cost_usd += llm_result.cost_usd or 0.0
         model_used = llm_result.model
 
         report_md = "\n".join(
@@ -112,6 +114,7 @@ def adversarial_reviewer_ensemble(state: PaperState) -> NodeResult:
         model=model_used,
         prompt_tokens=total_prompt_tokens,
         completion_tokens=total_completion_tokens,
+        cost_usd=total_cost_usd,
         artifacts_written=reviewer_reports,
         output_summary=f"round {round_num}: {len(all_major)} major, {len(all_minor)} minor across {len(personas)} reviewers",
     )
