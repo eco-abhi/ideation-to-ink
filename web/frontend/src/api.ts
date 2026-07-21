@@ -47,6 +47,7 @@ export interface PaperDetail extends PaperSummary {
   artifacts: Record<string, string>;
   paused: boolean;
   gate_payload: Record<string, unknown> | null;
+  running: boolean;
 }
 
 export interface ProvenanceEntry {
@@ -79,20 +80,37 @@ export interface CostsResponse {
   total: UsageRow;
 }
 
-async function getJSON<T>(path: string): Promise<T> {
-  const response = await fetch(path);
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
   if (!response.ok) {
-    throw new Error(`${path} -> HTTP ${response.status}`);
+    // FastAPI's HTTPException bodies are {"detail": "..."} -- surface that
+    // instead of a bare status code so form errors are actually readable.
+    const body = await response.json().catch(() => null);
+    const detail = body && typeof body === "object" && "detail" in body ? String(body.detail) : null;
+    throw new Error(detail ?? `${path} -> HTTP ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
+function postJSON<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export const api = {
-  listPapers: () => getJSON<PaperSummary[]>("/api/papers"),
-  getPaper: (slug: string) => getJSON<PaperDetail>(`/api/papers/${slug}`),
-  getFlow: (slug: string) => getJSON<FlowStatus>(`/api/papers/${slug}/flow`),
-  getProvenance: (slug: string) => getJSON<ProvenanceEntry[]>(`/api/papers/${slug}/provenance`),
-  getCosts: (slug: string) => getJSON<CostsResponse>(`/api/papers/${slug}/costs`),
+  listPapers: () => request<PaperSummary[]>("/api/papers"),
+  createPaper: (slug: string, topic: string) => postJSON<PaperSummary>("/api/papers", { slug, topic }),
+  getPaper: (slug: string) => request<PaperDetail>(`/api/papers/${slug}`),
+  getFlow: (slug: string) => request<FlowStatus>(`/api/papers/${slug}/flow`),
+  getProvenance: (slug: string) => request<ProvenanceEntry[]>(`/api/papers/${slug}/provenance`),
+  getCosts: (slug: string) => request<CostsResponse>(`/api/papers/${slug}/costs`),
   getArtifact: (slug: string, path: string) =>
-    getJSON<{ path: string; content: string }>(`/api/papers/${slug}/artifacts/${path}`),
+    request<{ path: string; content: string }>(`/api/papers/${slug}/artifacts/${path}`),
+  triggerRun: (slug: string, phase?: string) => postJSON<{ status: string }>(`/api/papers/${slug}/run`, { phase: phase ?? null }),
+  respondToGate: (slug: string, response: Record<string, unknown>) =>
+    postJSON<{ status: string }>(`/api/papers/${slug}/respond`, response),
 };

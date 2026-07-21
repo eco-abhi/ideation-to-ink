@@ -52,3 +52,4 @@ class PaperDetail(PaperSummary):
     artifacts: dict[str, str] = {}
     paused: bool = False
     gate_payload: dict[str, Any] | None = None
+    running: bool = False

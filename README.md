@@ -44,10 +44,12 @@ continues from exactly where it left off.
 
 ## Dashboard
 
-A read-only web dashboard over `papers/<slug>/` workspaces: paper list, a live
-process-flow diagram (colored by node status: pending/completed/failed/paused,
-click a node for its provenance detail or the paused gate's payload), and the
-same cost/usage data `engine costs` prints, rendered as a table.
+A web dashboard over `papers/<slug>/` workspaces -- create a paper, run it, and
+respond to every gate without touching the CLI: paper list with a "New paper"
+form, a live process-flow diagram (colored by node status:
+pending/completed/failed/paused, click a node for its provenance detail or the
+paused gate's payload with one-click response actions), and the same
+cost/usage data `engine costs` prints, rendered as a table.
 
 ```bash
 pip install -e ".[dev,web]"
@@ -57,13 +59,19 @@ cd web/frontend && npm install                        # first time only
 npm run dev                                            # terminal 2, http://localhost:5173
 ```
 
-Read-only in this version — no gate-response actions from the UI yet (still
-write `HUMAN_RESPONSE.json` + `engine run --resume` as above). The frontend
-polls every ~3s; there's no WebSocket/background-job machinery, since every
-route just reads files/checkpoint state that already exists on disk. See
-`web/backend/topology.py`'s docstring for how the flow diagram's node/edge
-structure is derived (hand-authored, guarded against drift from the real
-graph by `tests/test_topology.py`).
+`POST /api/papers/{slug}/run` runs `run_paper()` in a background thread (in-
+memory tracking, resets on backend restart -- fine for a local dev tool; a
+second concurrent run against the same paper is rejected with 409) so the
+request returns immediately and the UI polls for progress. Gate responses
+(`POST /api/papers/{slug}/respond`) write `HUMAN_RESPONSE.json` -- the same
+file the CLI's `--resume` flow reads -- and trigger a resume run the same way;
+`GatePanel.tsx` renders one-click buttons per gate type (Proceed/Stop,
+Approve/Revise, etc.) instead of you hand-writing that JSON. Still no
+WebSocket: every route reads/writes exactly the files `engine run` already
+uses, so the CLI and the dashboard interoperate freely -- drive a paper from
+either at any point. See `web/backend/topology.py`'s docstring for how the
+flow diagram's node/edge structure is derived (hand-authored, guarded against
+drift from the real graph by `tests/test_topology.py`).
 
 ## Architecture
 

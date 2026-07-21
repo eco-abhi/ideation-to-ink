@@ -89,9 +89,12 @@ def route_after(success_target: str) -> Callable[[PaperState], str]:
 
 def error_gate(state: PaperState) -> dict[str, Any]:
     """Reached whenever a traced node fails. Surfaces new errors to the human via
-    interrupt(); on --resume, acknowledges them and ends the run. Since the
-    triggering phase never advanced, the next `engine run --resume` re-enters at
-    the same phase and naturally retries the failed step.
+    interrupt(); acknowledging via --resume routes straight to END (this node's
+    only outgoing edge), which ends that invocation with nothing left pending.
+    Since the triggering phase never advanced, the *next* `engine run` call (no
+    --resume needed -- run_paper() only consults that flag when something is
+    actually pending) re-enters at the same phase via the conditional entry
+    point and naturally retries the failed step.
     """
     interrupt(
         {

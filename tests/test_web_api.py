@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 import pytest
 import yaml
@@ -13,6 +15,7 @@ def client(tmp_path, monkeypatch):
     # its own patch -- the autouse conftest fixture covers paper_dir()/checkpoint_path()
     # (function imports, fixed transitively) but not this direct binding.
     monkeypatch.setattr(app_module, "PAPERS_ROOT", tmp_path)
+    app_module._running.clear()  # module-level set persists across tests otherwise
     return TestClient(app_module.app)
 
 
@@ -156,3 +159,105 @@ def test_get_artifact_rejects_path_traversal(tmp_path, client):
     _scaffold(tmp_path, "demo")
     response = client.get("/api/papers/demo/artifacts/../../etc/passwd")
     assert response.status_code in (400, 404)
+
+
+# --- write endpoints ---
+
+
+def test_create_paper_scaffolds_workspace(tmp_path, client):
+    response = client.post("/api/papers", json={"slug": "new-paper", "topic": "A real topic"})
+    assert response.status_code == 201
+    data = response.json()
+    assert data["paper_id"] == "new-paper"
+    assert data["phase"] == "ideation"
+    assert (tmp_path / "new-paper" / "paper.yaml").exists()
+
+
+def test_create_paper_rejects_bad_slug(client):
+    response = client.post("/api/papers", json={"slug": "../escape", "topic": "x"})
+    assert response.status_code == 400
+
+
+def test_create_paper_rejects_empty_topic(client):
+    response = client.post("/api/papers", json={"slug": "demo", "topic": "   "})
+    assert response.status_code == 400
+
+
+def test_create_paper_conflicts_on_existing_slug(tmp_path, client):
+    _scaffold(tmp_path, "demo")
+    response = client.post("/api/papers", json={"slug": "demo", "topic": "x"})
+    assert response.status_code == 409
+
+
+def _mock_run_paper(monkeypatch, *, started: threading.Event, finished: threading.Event, calls: list):
+    def fake_run_paper(paper_id, *, target_phase=None, resume=False):
+        calls.append({"paper_id": paper_id, "target_phase": target_phase, "resume": resume})
+        started.set()
+        finished.wait(timeout=5)
+
+    monkeypatch.setattr("engine.graphs.master.run_paper", fake_run_paper)
+
+
+def _wait_until_not_running(paper_id: str, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with app_module._running_lock:
+            if paper_id not in app_module._running:
+                return
+        time.sleep(0.02)
+    raise AssertionError(f"{paper_id} still marked running after {timeout}s")
+
+
+def test_trigger_run_executes_in_background_and_reports_running(tmp_path, client, monkeypatch):
+    _scaffold(tmp_path, "demo")
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_run_paper(monkeypatch, started=started, finished=finished, calls=calls)
+
+    response = client.post("/api/papers/demo/run")
+    assert response.status_code == 202
+    assert started.wait(timeout=2)
+
+    detail = client.get("/api/papers/demo").json()
+    assert detail["running"] is True
+
+    finished.set()
+    _wait_until_not_running("demo")
+    assert calls == [{"paper_id": "demo", "target_phase": None, "resume": False}]
+
+
+def test_trigger_run_rejects_concurrent_run(tmp_path, client, monkeypatch):
+    _scaffold(tmp_path, "demo")
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_run_paper(monkeypatch, started=started, finished=finished, calls=calls)
+
+    first = client.post("/api/papers/demo/run")
+    assert first.status_code == 202
+    assert started.wait(timeout=2)
+
+    second = client.post("/api/papers/demo/run")
+    assert second.status_code == 409
+
+    finished.set()
+    _wait_until_not_running("demo")
+
+
+def test_respond_to_gate_writes_response_file_and_resumes(tmp_path, client, monkeypatch):
+    pdir = _scaffold(tmp_path, "demo")
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_run_paper(monkeypatch, started=started, finished=finished, calls=calls)
+
+    response = client.post("/api/papers/demo/respond", json={"decision": "proceed"})
+    assert response.status_code == 202
+    assert started.wait(timeout=2)
+
+    assert json.loads((pdir / "HUMAN_RESPONSE.json").read_text()) == {"decision": "proceed"}
+    assert calls == [{"paper_id": "demo", "target_phase": None, "resume": True}]
+
+    finished.set()
+    _wait_until_not_running("demo")
+
+
+def test_respond_to_gate_rejects_empty_body(tmp_path, client):
+    _scaffold(tmp_path, "demo")
+    response = client.post("/api/papers/demo/respond", json={})
+    assert response.status_code == 400
