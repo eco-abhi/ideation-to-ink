@@ -25,13 +25,17 @@ dev = [
     "pytest-mock>=3.14",
     "ruff>=0.7",
 ]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["engine*"]
+include = ["engine*", "web*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
