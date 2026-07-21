@@ -1,20 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { api, type PaperSummary } from "../api";
 
-const PHASE_COLOR: Record<string, string> = {
-  ideation: "#3b82f6",
-  experiments: "#8b5cf6",
-  writing: "#f59e0b",
-  review: "#10b981",
-  revision: "#f97316",
-  done: "#22c55e",
-};
-
-interface Props {
-  onSelect: (paperId: string) => void;
-}
-
-export function PaperList({ onSelect }: Props) {
+export function PaperList({ onSelect }: { onSelect: (paperId: string) => void }) {
   const [papers, setPapers] = useState<PaperSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slug, setSlug] = useState("");
@@ -50,69 +37,65 @@ export function PaperList({ onSelect }: Props) {
   return (
     <div>
       <form onSubmit={handleCreate} style={formStyle}>
-        <h3 style={{ margin: "0 0 8px" }}>New paper</h3>
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <input
-            placeholder="slug (e.g. supply-chain-agents)"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            required
-            pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*"
-            title="alphanumeric, then alphanumeric/-/_ only"
-            style={inputStyle}
-          />
-        </div>
+        <h3 style={{ margin: "0 0 12px", fontSize: 14, color: "var(--text-secondary)" }}>New paper</h3>
+        <input
+          placeholder="slug (e.g. supply-chain-agents)"
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          required
+          pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*"
+          title="alphanumeric, then alphanumeric/-/_ only"
+          style={{ ...inputStyle, display: "block", width: "100%", marginBottom: 8 }}
+        />
         <textarea
           placeholder="Paste the topic / idea for this paper..."
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           required
           rows={3}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: 8 }}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: 10 }}
         />
         <button type="submit" disabled={creating}>
           {creating ? "Creating..." : "Create paper"}
         </button>
       </form>
 
-      {error && <p style={{ color: "#dc2626" }}>{error}</p>}
-      {!papers && <p>Loading...</p>}
-      {papers && papers.length === 0 && <p style={{ color: "#64748b" }}>No papers yet -- create one above.</p>}
+      {error && <p style={{ color: "var(--status-critical)" }}>{error}</p>}
+      {!papers && <p style={{ color: "var(--text-muted)" }}>Loading...</p>}
+      {papers && papers.length === 0 && <p style={{ color: "var(--text-muted)" }}>No papers yet -- create one above.</p>}
       {papers && papers.length > 0 && (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
-              <th style={{ padding: 8 }}>Slug</th>
-              <th style={{ padding: 8 }}>Topic</th>
-              <th style={{ padding: 8 }}>Venue</th>
-              <th style={{ padding: 8 }}>Phase</th>
-              <th style={{ padding: 8 }}>Status</th>
+            <tr style={{ textAlign: "left", borderBottom: "1px solid var(--gridline)" }}>
+              <th style={thStyle}>Slug</th>
+              <th style={thStyle}>Topic</th>
+              <th style={thStyle}>Venue</th>
+              <th style={thStyle}>Phase</th>
+              <th style={thStyle}>Status</th>
             </tr>
           </thead>
           <tbody>
             {papers.map((p) => (
-              <tr
-                key={p.paper_id}
-                onClick={() => onSelect(p.paper_id)}
-                style={{ cursor: "pointer", borderBottom: "1px solid #f1f5f9" }}
-              >
-                <td style={{ padding: 8, fontFamily: "monospace" }}>{p.paper_id}</td>
-                <td style={{ padding: 8 }}>{p.topic}</td>
-                <td style={{ padding: 8 }}>{p.venue ?? "—"}</td>
-                <td style={{ padding: 8 }}>
+              <tr key={p.paper_id} onClick={() => onSelect(p.paper_id)} style={rowStyle}>
+                <td style={{ ...tdStyle, fontFamily: "ui-monospace, Consolas, monospace" }}>{p.paper_id}</td>
+                <td style={{ ...tdStyle, maxWidth: 420, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.topic}
+                </td>
+                <td style={tdStyle}>{p.venue ?? "—"}</td>
+                <td style={tdStyle}>
                   <span
                     style={{
-                      background: PHASE_COLOR[p.phase] ?? "#94a3b8",
-                      color: "white",
-                      borderRadius: 4,
-                      padding: "2px 8px",
+                      border: "1px solid var(--text-muted)",
+                      color: "var(--text-secondary)",
+                      borderRadius: 999,
+                      padding: "1px 8px",
                       fontSize: 12,
                     }}
                   >
                     {p.phase}
                   </span>
                 </td>
-                <td style={{ padding: 8 }}>{p.status}</td>
+                <td style={tdStyle}>{p.status}</td>
               </tr>
             ))}
           </tbody>
@@ -123,8 +106,9 @@ export function PaperList({ onSelect }: Props) {
 }
 
 const formStyle: CSSProperties = {
-  border: "1px solid #e2e8f0",
+  border: "1px solid var(--border)",
   borderRadius: 8,
+  background: "var(--surface-1)",
   padding: 16,
   marginBottom: 24,
   maxWidth: 480,
@@ -132,8 +116,12 @@ const formStyle: CSSProperties = {
 
 const inputStyle: CSSProperties = {
   padding: 8,
-  border: "1px solid #cbd5e1",
+  border: "1px solid var(--gridline)",
   borderRadius: 6,
   fontFamily: "inherit",
   fontSize: 14,
 };
+
+const thStyle: CSSProperties = { padding: 8, fontSize: 12, color: "var(--text-muted)", fontWeight: 600 };
+const tdStyle: CSSProperties = { padding: 8, fontSize: 13 };
+const rowStyle: CSSProperties = { cursor: "pointer", borderBottom: "1px solid var(--gridline)" };

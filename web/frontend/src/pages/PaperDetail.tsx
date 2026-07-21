@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { api, type CostsResponse, type FlowStatus, type PaperDetail as PaperDetailT, type ProvenanceEntry } from "../api";
 import { FlowGraph } from "../components/FlowGraph";
 import { CostTable } from "../components/CostTable";
 import { GatePanel } from "../components/GatePanel";
 
 const POLL_INTERVAL_MS = 3000;
+const TOPIC_COLLAPSE_LENGTH = 220;
 
 // Matches PHASE_ENTRY's user-restartable keys in engine/graphs/master.py --
 // "revision" (mid-loop) and "done" (nothing to re-enter) aren't valid targets.
@@ -24,6 +25,7 @@ export function PaperDetail({ paperId, onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [rerunPhase, setRerunPhase] = useState<(typeof RERUN_PHASES)[number]>("ideation");
+  const [topicExpanded, setTopicExpanded] = useState(false);
 
   const refresh = useCallback(() => {
     return Promise.all([api.getPaper(paperId), api.getFlow(paperId), api.getCosts(paperId), api.getProvenance(paperId)])
@@ -87,51 +89,73 @@ export function PaperDetail({ paperId, onBack }: Props) {
   const canRun = detail && !detail.running && !detail.paused && detail.phase !== "done";
   const canRerun = detail && !detail.running;
 
+  const topic = detail?.topic ?? "";
+  const topicIsLong = topic.length > TOPIC_COLLAPSE_LENGTH;
+  const topicShown = topicIsLong && !topicExpanded ? topic.slice(0, TOPIC_COLLAPSE_LENGTH).trimEnd() + "…" : topic;
+
   return (
     <div>
-      <button onClick={onBack} style={{ marginBottom: 12 }}>
+      <button onClick={onBack} style={{ marginBottom: 16 }}>
         ← All papers
       </button>
-      <h2 style={{ margin: "0 0 4px" }}>{paperId}</h2>
-      {error && <p style={{ color: "#dc2626" }}>{error}</p>}
-      {detail && (
-        <p style={{ color: "#64748b", marginTop: 0 }}>
-          {detail.topic} — phase <strong>{detail.phase}</strong>
-          {detail.running && " (running…)"}
-          {detail.paused && " (paused, waiting on a decision)"}
-          {detail.revision_loop_count > 0 && ` — revision loop ${detail.revision_loop_count}/3`}
-        </p>
-      )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 12 }}>
-        {canRun && (
-          <button onClick={handleRun} disabled={actionPending}>
-            {actionPending ? "Starting..." : detail?.status === "new" ? "Run pipeline" : "Continue run"}
-          </button>
+      <div style={cardStyle}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontFamily: "ui-monospace, Consolas, monospace", fontSize: 18 }}>{paperId}</h2>
+          <StatusPill detail={detail} />
+        </div>
+
+        {error && <p style={{ color: "var(--status-critical)", fontSize: 13 }}>{error}</p>}
+
+        {detail && (
+          <>
+            <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: "10px 0", whiteSpace: "pre-wrap" }}>
+              {topicShown}
+              {topicIsLong && (
+                <button
+                  onClick={() => setTopicExpanded((v) => !v)}
+                  style={{ marginLeft: 8, padding: "2px 8px", fontSize: 11, verticalAlign: "middle" }}
+                >
+                  {topicExpanded ? "Show less" : "Show more"}
+                </button>
+              )}
+            </p>
+            {detail.revision_loop_count > 0 && (
+              <p style={{ fontSize: 12, color: "var(--status-warning)", margin: "0 0 8px" }}>
+                Revision loop {detail.revision_loop_count}/3
+              </p>
+            )}
+          </>
         )}
 
-        {canRerun && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 13, color: "#64748b" }}>Rerun from:</span>
-            <select value={rerunPhase} onChange={(e) => setRerunPhase(e.target.value as typeof rerunPhase)}>
-              {RERUN_PHASES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <button onClick={handleRerun} disabled={actionPending}>
-              {actionPending ? "Starting..." : "Rerun"}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          {canRun && (
+            <button onClick={handleRun} disabled={actionPending}>
+              {actionPending ? "Starting..." : detail?.status === "new" ? "Run pipeline" : "Continue run"}
             </button>
-          </div>
-        )}
+          )}
+
+          {canRerun && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Rerun from:</span>
+              <select value={rerunPhase} onChange={(e) => setRerunPhase(e.target.value as typeof rerunPhase)}>
+                {RERUN_PHASES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <button onClick={handleRerun} disabled={actionPending}>
+                {actionPending ? "Starting..." : "Rerun"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {detail?.running && <p style={{ color: "#f59e0b", fontSize: 13 }}>Running in the background — this page polls every 3s.</p>}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, marginTop: 16 }}>
         <div>{flow && <FlowGraph flow={flow} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} />}</div>
-        <div style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 12 }}>
+        <div style={{ ...cardStyle, margin: 0, alignSelf: "start" }}>
           {flow && (
             <GatePanel
               flow={flow}
@@ -144,8 +168,41 @@ export function PaperDetail({ paperId, onBack }: Props) {
         </div>
       </div>
 
-      <h3>Cost & Usage</h3>
-      {costs && <CostTable costs={costs} />}
+      <h3 style={{ marginTop: 24 }}>Cost & Usage</h3>
+      <div style={cardStyle}>{costs && <CostTable costs={costs} />}</div>
     </div>
   );
 }
+
+function StatusPill({ detail }: { detail: PaperDetailT | null }) {
+  if (!detail) return null;
+  if (detail.running) return <Pill color="var(--series-blue)" label="Running…" />;
+  if (detail.paused) return <Pill color="var(--status-warning)" label="Paused" />;
+  if (detail.phase === "done") return <Pill color="var(--status-good)" label="Done" />;
+  return <Pill color="var(--text-muted)" label={detail.phase} />;
+}
+
+function Pill({ color, label }: { color: string; label: string }) {
+  return (
+    <span
+      style={{
+        color,
+        border: `1px solid ${color}`,
+        borderRadius: 999,
+        padding: "2px 10px",
+        fontSize: 12,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+const cardStyle: CSSProperties = {
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  background: "var(--surface-1)",
+  padding: 16,
+};

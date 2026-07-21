@@ -1,3 +1,39 @@
+/* Design tokens from the dataviz skill's reference palette (references/palette.md).
+   Chrome/ink roles + the fixed status palette (good/warning/critical), light+dark. */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page-plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --series-blue: #2a78d6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page-plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-serious: #ec835a;
+    --status-critical: #e66767;
+    --series-blue: #3987e5;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -5,8 +41,8 @@
 body {
   margin: 0;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
-  color: #0f172a;
-  background: #ffffff;
+  color: var(--text-primary);
+  background: var(--page-plane);
 }
 
 table {
@@ -16,4 +52,36 @@ table {
 th,
 td {
   vertical-align: top;
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--series-blue) 6%, transparent);
+}
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--series-blue);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
 }

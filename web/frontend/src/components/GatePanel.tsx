@@ -57,7 +57,7 @@ function quickActionsFor(payload: Record<string, unknown>): QuickAction[] {
 // selected node's latest provenance entry, otherwise a hint to click a node.
 export function GatePanel({ flow, selectedNodeId, provenance, onRespond, responding }: Props) {
   if (!selectedNodeId) {
-    return <p style={{ color: "#64748b", fontSize: 13 }}>Click a node in the graph for detail.</p>;
+    return <p style={hintStyle}>Click a node in the graph for detail.</p>;
   }
 
   if (selectedNodeId === flow.paused_gate && flow.gate_payload) {
@@ -65,7 +65,7 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
     const actions = quickActionsFor(payload);
     return (
       <div>
-        <h4 style={{ margin: "0 0 8px" }}>⏸ Paused: {String(payload.type)}</h4>
+        <h4 style={{ margin: "0 0 8px", color: "var(--status-warning)" }}>⏸ Paused: {String(payload.type)}</h4>
         <pre style={preStyle}>{JSON.stringify(payload, null, 2)}</pre>
         {actions.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
@@ -81,7 +81,7 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
             ))}
           </div>
         ) : (
-          <p style={{ fontSize: 12, color: "#64748b" }}>
+          <p style={hintStyle}>
             Unrecognized gate type -- respond via <code>HUMAN_RESPONSE.json</code> + <code>engine run --resume</code>{" "}
             instead.
           </p>
@@ -93,7 +93,7 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
   const entries = provenance.filter((e) => e.agent === selectedNodeId);
   const latest = entries[entries.length - 1];
   if (!latest) {
-    return <p style={{ color: "#64748b", fontSize: 13 }}>No provenance recorded for this node yet.</p>;
+    return <p style={hintStyle}>No provenance recorded for this node yet.</p>;
   }
 
   // model/cost_usd are both null in two very different situations: a genuinely
@@ -131,12 +131,12 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
         <dd>{latest.artifacts_written.length ? latest.artifacts_written.join(", ") : "none"}</dd>
       </dl>
       {latest.error ? (
-        <p style={{ color: "#dc2626", fontSize: 12 }}>Error: {latest.error}</p>
+        <p style={{ color: "var(--status-critical)", fontSize: 12 }}>Error: {latest.error}</p>
       ) : (
-        <p style={{ fontSize: 12, color: "#475569" }}>{latest.output_summary}</p>
+        <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>{latest.output_summary}</p>
       )}
       {entries.length > 1 && (
-        <p style={{ fontSize: 11, color: "#94a3b8" }}>
+        <p style={{ fontSize: 11, color: "var(--text-muted)" }}>
           Ran {entries.length} times (revision loop) -- showing the latest.
         </p>
       )}
@@ -144,8 +144,11 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
   );
 }
 
+const hintStyle: CSSProperties = { color: "var(--text-muted)", fontSize: 13 };
+
 const preStyle: CSSProperties = {
-  background: "#f8fafc",
+  background: "var(--page-plane)",
+  border: "1px solid var(--gridline)",
   padding: 8,
   borderRadius: 6,
   fontSize: 11,
@@ -161,6 +164,6 @@ const dlStyle: CSSProperties = {
 };
 
 const dangerButtonStyle: CSSProperties = {
-  color: "#b91c1c",
-  borderColor: "#fca5a5",
+  color: "var(--status-critical)",
+  borderColor: "var(--status-critical)",
 };

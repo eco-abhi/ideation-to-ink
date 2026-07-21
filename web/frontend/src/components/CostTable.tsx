@@ -8,7 +8,7 @@ export function CostTable({ costs }: Props) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
       <thead>
-        <tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
+        <tr style={{ textAlign: "left", borderBottom: "1px solid var(--gridline)" }}>
           <th style={{ padding: "4px 8px" }}>Agent</th>
           <th style={{ padding: "4px 8px", textAlign: "right" }}>Calls</th>
           <th style={{ padding: "4px 8px", textAlign: "right" }}>Prompt</th>
@@ -18,7 +18,7 @@ export function CostTable({ costs }: Props) {
       </thead>
       <tbody>
         {costs.rows.map((row) => (
-          <tr key={row.key} style={{ borderBottom: "1px solid #f1f5f9" }}>
+          <tr key={row.key} style={{ borderBottom: "1px solid var(--gridline)" }}>
             <td style={{ padding: "4px 8px" }}>{row.key}</td>
             <td style={{ padding: "4px 8px", textAlign: "right" }}>{row.calls}</td>
             <td style={{ padding: "4px 8px", textAlign: "right" }}>{row.prompt_tokens.toLocaleString()}</td>
@@ -33,7 +33,7 @@ export function CostTable({ costs }: Props) {
         ))}
         {costs.rows.length === 0 && (
           <tr>
-            <td colSpan={5} style={{ padding: 12, color: "#64748b", textAlign: "center" }}>
+            <td colSpan={5} style={{ padding: 12, color: "var(--text-muted)", textAlign: "center" }}>
               No LLM usage recorded yet.
             </td>
           </tr>
@@ -41,7 +41,7 @@ export function CostTable({ costs }: Props) {
       </tbody>
       {costs.rows.length > 0 && (
         <tfoot>
-          <tr style={{ fontWeight: 600, borderTop: "2px solid #e2e8f0" }}>
+          <tr style={{ fontWeight: 600, borderTop: "2px solid var(--gridline)" }}>
             <td style={{ padding: "4px 8px" }}>Total</td>
             <td style={{ padding: "4px 8px", textAlign: "right" }}>{costs.total.calls}</td>
             <td style={{ padding: "4px 8px", textAlign: "right" }}>{costs.total.prompt_tokens.toLocaleString()}</td>
