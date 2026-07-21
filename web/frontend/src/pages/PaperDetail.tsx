@@ -50,6 +50,16 @@ export function PaperDetail({ paperId, onBack }: Props) {
     };
   }, [refresh]);
 
+  // Jump to the actionable node the moment a run pauses, instead of leaving
+  // the graph on "click a node for detail" (or worse, whatever unrelated node
+  // was selected before) with the real action buttons one extra click away.
+  // Keyed on the *value* of paused_gate, not the flow object -- refresh() makes
+  // a new object every poll, but this should only fire on an actual new pause,
+  // not re-steal a selection the user deliberately clicked elsewhere.
+  useEffect(() => {
+    if (flow?.paused_gate) setSelectedNodeId(flow.paused_gate);
+  }, [flow?.paused_gate]);
+
   const runWithPhase = async (phase?: string) => {
     setActionPending(true);
     setError(null);
@@ -156,6 +166,14 @@ export function PaperDetail({ paperId, onBack }: Props) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, marginTop: 16 }}>
         <div>{flow && <FlowGraph flow={flow} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} />}</div>
         <div style={{ ...cardStyle, margin: 0, alignSelf: "start" }}>
+          {flow?.paused_gate && selectedNodeId !== flow.paused_gate && (
+            <button
+              onClick={() => setSelectedNodeId(flow.paused_gate)}
+              style={{ marginBottom: 12, width: "100%", borderColor: "var(--status-warning)", color: "var(--status-warning)" }}
+            >
+              ⏸ Paused at {flow.paused_gate} — respond
+            </button>
+          )}
           {flow && (
             <GatePanel
               flow={flow}
