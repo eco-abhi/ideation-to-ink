@@ -96,12 +96,27 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
     return <p style={{ color: "#64748b", fontSize: 13 }}>No provenance recorded for this node yet.</p>;
   }
 
+  // model/cost_usd are both null in two very different situations: a genuinely
+  // deterministic node that never calls an LLM (e.g. experiment_scaffolder), or
+  // a node that DID attempt a call but errored before NodeResult was ever built
+  // (traced_node's except-branch logs model=None on any exception). latest.error
+  // is what tells them apart -- don't claim "deterministic" when it just failed.
+  const modelLabel = latest.model ?? (latest.error ? "(failed before a model call completed)" : "(deterministic, no LLM call)");
+  const costLabel =
+    latest.cost_usd !== null
+      ? `$${latest.cost_usd.toFixed(4)}`
+      : latest.error
+        ? "n/a (failed)"
+        : latest.model
+          ? "unknown (no pricing data)"
+          : "n/a";
+
   return (
     <div>
       <h4 style={{ margin: "0 0 8px" }}>{latest.agent}</h4>
       <dl style={dlStyle}>
         <dt>Model</dt>
-        <dd>{latest.model ?? "(deterministic, no LLM call)"}</dd>
+        <dd>{modelLabel}</dd>
         <dt>Skill</dt>
         <dd>{latest.skill_name ? `${latest.skill_name} @ ${latest.skill_upstream_commit?.slice(0, 8)}` : "(local)"}</dd>
         <dt>Tokens</dt>
@@ -109,7 +124,7 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
           {latest.tokens.prompt ?? 0} prompt / {latest.tokens.completion ?? 0} completion
         </dd>
         <dt>Cost</dt>
-        <dd>{latest.cost_usd !== null ? `$${latest.cost_usd.toFixed(4)}` : "unknown"}</dd>
+        <dd>{costLabel}</dd>
         <dt>Duration</dt>
         <dd>{latest.duration_ms}ms</dd>
         <dt>Artifacts</dt>
