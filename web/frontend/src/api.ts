@@ -118,11 +118,28 @@ export interface ImportPaperInput {
   bibliography: string | null;
 }
 
+export interface ImportPaperFileInput {
+  slug: string;
+  file: File;
+  title: string | null;
+  bibliography: string | null;
+}
+
 export const api = {
   listPapers: () => request<PaperSummary[]>("/api/papers"),
   createPaper: (input: CreatePaperInput) => postJSON<PaperSummary>("/api/papers", input),
   importPaper: (input: ImportPaperInput) =>
     postJSON<{ status: string }>(`/api/papers/${input.slug}/import`, input),
+  importPaperFile: (input: ImportPaperFileInput) => {
+    const formData = new FormData();
+    formData.append("file", input.file);
+    if (input.title) formData.append("title", input.title);
+    if (input.bibliography) formData.append("bibliography", input.bibliography);
+    return request<{ status: string; extracted_chars: number }>(`/api/papers/${input.slug}/import-file`, {
+      method: "POST",
+      body: formData, // no Content-Type header -- the browser sets the multipart boundary itself
+    });
+  },
   getPaper: (slug: string) => request<PaperDetail>(`/api/papers/${slug}`),
   getFlow: (slug: string) => request<FlowStatus>(`/api/papers/${slug}/flow`),
   getProvenance: (slug: string) => request<ProvenanceEntry[]>(`/api/papers/${slug}/provenance`),

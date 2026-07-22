@@ -16,7 +16,7 @@ import re
 import threading
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -119,6 +119,21 @@ def _import_in_background(paper_id: str, *, title: str | None, full_text: str, b
             _running.discard(paper_id)
 
 
+def _start_import(paper_id: str, *, title: str | None, full_text: str, bibliography: str | None) -> None:
+    with _running_lock:
+        if paper_id in _running:
+            raise HTTPException(status_code=409, detail=f"a run is already in progress for {paper_id!r}")
+        _running.add(paper_id)
+        _import_errors.pop(paper_id, None)
+    thread = threading.Thread(
+        target=_import_in_background,
+        args=(paper_id,),
+        kwargs={"title": title, "full_text": full_text, "bibliography": bibliography},
+        daemon=True,
+    )
+    thread.start()
+
+
 def _paper_summary_kwargs(doc: dict, live: dict | None = None) -> dict:
     live = live or {}
     return {
@@ -195,19 +210,43 @@ def import_paper_route(paper_id: str, req: ImportPaperRequest) -> dict:
     if not req.full_text.strip():
         raise HTTPException(status_code=400, detail="full_text must not be empty")
 
-    with _running_lock:
-        if paper_id in _running:
-            raise HTTPException(status_code=409, detail=f"a run is already in progress for {paper_id!r}")
-        _running.add(paper_id)
-        _import_errors.pop(paper_id, None)
-    thread = threading.Thread(
-        target=_import_in_background,
-        args=(paper_id,),
-        kwargs={"title": req.title, "full_text": req.full_text, "bibliography": req.bibliography},
-        daemon=True,
-    )
-    thread.start()
+    _start_import(paper_id, title=req.title, full_text=req.full_text, bibliography=req.bibliography)
     return {"status": "importing"}
+
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB -- generous for a text-heavy paper PDF, guards against a bad upload
+
+
+@app.post("/api/papers/{paper_id}/import-file", status_code=202)
+async def import_paper_file_route(
+    paper_id: str,
+    file: UploadFile = File(...),  # noqa: B008 -- FastAPI's own required idiom for multipart params, not a real mutable-default bug
+    title: str | None = Form(None),
+    bibliography: str | None = Form(None),
+) -> dict:
+    """Same retroactive-review path as /import, fed a PDF/.docx instead of
+    pasted text. Extraction happens synchronously here (bounded CPU cost, and
+    a bad file -- scanned PDF, wrong format -- should 400 immediately with a
+    clear reason rather than surface asynchronously through import_error the
+    way an LLM-call failure does); only the actual review (real LLM calls,
+    genuinely slow) is backgrounded, same as every other write endpoint here.
+    """
+    _validate_slug(paper_id)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="uploaded file is empty")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"file exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit")
+
+    from engine.tools.document_extract import UnsupportedDocumentError, extract_text
+
+    try:
+        full_text = extract_text(file.filename or "", content)
+    except UnsupportedDocumentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _start_import(paper_id, title=title, full_text=full_text, bibliography=bibliography)
+    return {"status": "importing", "extracted_chars": len(full_text)}
 
 
 @app.get("/api/papers/{paper_id}", response_model=PaperDetail)

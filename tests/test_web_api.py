@@ -376,3 +376,54 @@ def test_import_paper_route_rejects_concurrent_run(client, monkeypatch):
 
     finished.set()
     _wait_until_not_running("demo")
+
+
+# --- import via file upload (PDF/.docx) ---
+
+
+def test_import_file_route_extracts_and_starts_background_import(client, monkeypatch):
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_import_pasted_text(monkeypatch, started=started, finished=finished, calls=calls)
+    monkeypatch.setattr(
+        "engine.tools.document_extract.extract_text", lambda filename, content: f"extracted from {filename}"
+    )
+
+    response = client.post(
+        "/api/papers/upload-demo/import-file",
+        files={"file": ("paper.pdf", b"%PDF-fake-bytes", "application/pdf")},
+        data={"title": "Uploaded Title"},
+    )
+    assert response.status_code == 202
+    assert response.json()["extracted_chars"] == len("extracted from paper.pdf")
+    assert started.wait(timeout=2)
+
+    finished.set()
+    _wait_until_not_running("upload-demo")
+    assert calls == [
+        {"paper_id": "upload-demo", "title": "Uploaded Title", "full_text": "extracted from paper.pdf", "bibliography": None}
+    ]
+
+
+def test_import_file_route_rejects_empty_upload(client):
+    response = client.post(
+        "/api/papers/demo/import-file", files={"file": ("paper.pdf", b"", "application/pdf")}
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"].lower()
+
+
+def test_import_file_route_rejects_legacy_doc(client):
+    # Real dispatch through document_extract, not mocked -- confirms the actual
+    # UnsupportedDocumentError -> HTTP 400 wiring, not just that some 400 fires.
+    response = client.post(
+        "/api/papers/demo/import-file", files={"file": ("paper.doc", b"fake legacy doc bytes", "application/msword")}
+    )
+    assert response.status_code == 400
+    assert "Legacy .doc" in response.json()["detail"]
+
+
+def test_import_file_route_rejects_oversized_upload(client, monkeypatch):
+    monkeypatch.setattr("web.backend.app.MAX_UPLOAD_BYTES", 10)
+    response = client.post("/api/papers/demo/import-file", files={"file": ("paper.pdf", b"x" * 100, "application/pdf")})
+    assert response.status_code == 400
+    assert "exceeds" in response.json()["detail"]

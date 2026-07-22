@@ -178,30 +178,50 @@ function NewPaperForm({ onCreated }: { onCreated: (paperId: string) => void }) {
   );
 }
 
+type ImportSource = "paste" | "file";
+const ACCEPTED_FILE_EXTENSIONS = ".pdf,.docx";
+
 function ImportPaperForm({ onImportStarted }: { onImportStarted: (paperId: string) => void }) {
+  const [source, setSource] = useState<ImportSource>("paste");
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [fullText, setFullText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [bibliography, setBibliography] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setSlug("");
+    setTitle("");
+    setFullText("");
+    setFile(null);
+    setBibliography("");
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    const startedSlug = slug.trim();
     try {
-      await api.importPaper({
-        slug: slug.trim(),
-        title: title.trim() || null,
-        full_text: fullText,
-        bibliography: bibliography.trim() || null,
-      });
-      const startedSlug = slug.trim();
-      setSlug("");
-      setTitle("");
-      setFullText("");
-      setBibliography("");
+      if (source === "paste") {
+        await api.importPaper({
+          slug: startedSlug,
+          title: title.trim() || null,
+          full_text: fullText,
+          bibliography: bibliography.trim() || null,
+        });
+      } else {
+        if (!file) throw new Error("choose a PDF or .docx file");
+        await api.importPaperFile({
+          slug: startedSlug,
+          file,
+          title: title.trim() || null,
+          bibliography: bibliography.trim() || null,
+        });
+      }
+      reset();
       onImportStarted(startedSlug);
     } catch (err) {
       setError(String(err));
@@ -213,10 +233,19 @@ function ImportPaperForm({ onImportStarted }: { onImportStarted: (paperId: strin
   return (
     <form onSubmit={handleSubmit} style={formStyle}>
       <p style={{ margin: "0 0 12px", fontSize: 12, color: "var(--text-muted)" }}>
-        Already have a draft? Paste it here for retroactive review -- citation verification, unsupported-claim
+        Already have a draft? Import it here for retroactive review -- citation verification, unsupported-claim
         detection, and structural drift, all against what you already wrote. This runs several real LLM calls in the
         background and can take a minute or two; you'll land on the paper's page and it'll update as it goes.
       </p>
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 13 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+          <input type="radio" checked={source === "paste"} onChange={() => setSource("paste")} /> Paste text
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+          <input type="radio" checked={source === "file"} onChange={() => setSource("file")} /> Upload PDF / .docx
+        </label>
+      </div>
 
       <Field label="Slug">
         <input
@@ -230,7 +259,7 @@ function ImportPaperForm({ onImportStarted }: { onImportStarted: (paperId: strin
         />
       </Field>
 
-      <Field label="Title" hint="Optional -- inferred from the pasted text if omitted, but that fallback is just the slug.">
+      <Field label="Title" hint="Optional -- inferred from the source if omitted, but that fallback is just the slug.">
         <input
           placeholder="The paper's actual title"
           value={title}
@@ -239,16 +268,34 @@ function ImportPaperForm({ onImportStarted }: { onImportStarted: (paperId: strin
         />
       </Field>
 
-      <Field label="Full paper text" hint="Paste the whole thing. Long pastes are automatically split into chunks so the whole paper gets reviewed, not just the first page.">
-        <textarea
-          placeholder="Paste the complete draft -- title, abstract, all sections..."
-          value={fullText}
-          onChange={(e) => setFullText(e.target.value)}
-          required
-          rows={10}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "ui-monospace, Consolas, monospace", fontSize: 12 }}
-        />
-      </Field>
+      {source === "paste" ? (
+        <Field
+          label="Full paper text"
+          hint="Paste the whole thing. Long pastes are automatically split into chunks so the whole paper gets reviewed, not just the first page."
+        >
+          <textarea
+            placeholder="Paste the complete draft -- title, abstract, all sections..."
+            value={fullText}
+            onChange={(e) => setFullText(e.target.value)}
+            required
+            rows={10}
+            style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "ui-monospace, Consolas, monospace", fontSize: 12 }}
+          />
+        </Field>
+      ) : (
+        <Field
+          label="File"
+          hint="PDF or .docx, up to 20MB. Legacy .doc isn't supported -- save as .docx first. Scanned/image-only PDFs won't work (no OCR) -- use Paste text instead for those."
+        >
+          <input
+            type="file"
+            accept={ACCEPTED_FILE_EXTENSIONS}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            required
+            style={inputStyle}
+          />
+        </Field>
+      )}
 
       <Field label="Bibliography (optional)" hint="BibTeX format (.bib content). Plain reference-list text won't parse -- skip this if you don't have real BibTeX; citation verification just won't run.">
         <textarea
