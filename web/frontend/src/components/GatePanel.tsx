@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { FlowStatus, ProvenanceEntry } from "../api";
 
 interface Props {
@@ -6,6 +6,7 @@ interface Props {
   selectedNodeId: string | null;
   provenance: ProvenanceEntry[];
   onRespond: (response: Record<string, unknown>) => void;
+  onSubmitResults: (resultsText: string, notes: string) => void;
   responding: boolean;
 }
 
@@ -30,8 +31,6 @@ function quickActionsFor(payload: Record<string, unknown>): QuickAction[] {
         { label: "Approve", response: { decision: "approve" } },
         { label: "Revise (stop for manual edit)", response: { decision: "revise" }, danger: true },
       ];
-    case "awaiting_experiment_results":
-      return [{ label: "Continue (results are ready)", response: { ack: true } }];
     case "suspicious_citations": {
       const suspicious = Array.isArray(payload.suspicious) ? payload.suspicious : [];
       const keys = suspicious.map((s) => (s as { bib_key?: string }).bib_key).filter(Boolean);
@@ -55,13 +54,65 @@ function quickActionsFor(payload: Record<string, unknown>): QuickAction[] {
 // Doubles as the node-detail panel: shows the paused gate's payload + response
 // actions if the selected node is the currently-paused gate, otherwise the
 // selected node's latest provenance entry, otherwise a hint to click a node.
-export function GatePanel({ flow, selectedNodeId, provenance, onRespond, responding }: Props) {
+export function GatePanel({ flow, selectedNodeId, provenance, onRespond, onSubmitResults, responding }: Props) {
   if (!selectedNodeId) {
     return <p style={hintStyle}>Click a node in the graph for detail.</p>;
   }
 
   if (selectedNodeId === flow.paused_gate && flow.gate_payload) {
     const payload = flow.gate_payload;
+
+    if (payload.type === "awaiting_experiment_results") {
+      return (
+        <div>
+          <h4 style={{ margin: "0 0 8px", color: "var(--status-warning)" }}>⏸ Paused: awaiting_experiment_results</h4>
+          <ResultsForm onSubmit={onSubmitResults} responding={responding} />
+          <p style={{ ...hintStyle, marginTop: 10 }}>
+            Already wrote <code>experiments/results/metrics.json</code> yourself?
+          </p>
+          <button disabled={responding} onClick={() => onRespond({ ack: true })}>
+            {responding ? "Working..." : "Continue (results are ready)"}
+          </button>
+        </div>
+      );
+    }
+
+    if (payload.type === "human_review_feedback") {
+      const major = Array.isArray(payload.major_concerns) ? (payload.major_concerns as string[]) : [];
+      const minor = Array.isArray(payload.minor_concerns) ? (payload.minor_concerns as string[]) : [];
+      return (
+        <div>
+          <h4 style={{ margin: "0 0 8px", color: "var(--status-warning)" }}>
+            ⏸ Paused: your feedback (round {String(payload.round)})
+          </h4>
+          {major.length > 0 && (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, margin: "0 0 4px" }}>Automated reviewers' major concerns</p>
+              <ul style={concernListStyle}>
+                {major.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {minor.length > 0 && (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, margin: "8px 0 4px" }}>Minor concerns</p>
+              <ul style={concernListStyle}>
+                {minor.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {major.length === 0 && minor.length === 0 && (
+            <p style={hintStyle}>The automated reviewers raised no concerns this round.</p>
+          )}
+          <ReviewFeedbackForm onRespond={onRespond} responding={responding} />
+        </div>
+      );
+    }
+
     const actions = quickActionsFor(payload);
     return (
       <div>
@@ -144,7 +195,110 @@ export function GatePanel({ flow, selectedNodeId, provenance, onRespond, respond
   );
 }
 
+function ResultsForm({
+  onSubmit,
+  responding,
+}: {
+  onSubmit: (resultsText: string, notes: string) => void;
+  responding: boolean;
+}) {
+  const [resultsText, setResultsText] = useState("");
+  const [notes, setNotes] = useState("");
+  const canSubmit = resultsText.trim().length > 0 && !responding;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={formLabelStyle}>
+        Results (metrics, numbers, or a pasted table — whatever you've got)
+        <textarea
+          value={resultsText}
+          onChange={(e) => setResultsText(e.target.value)}
+          rows={6}
+          style={textareaStyle}
+          placeholder={'{"accuracy": 0.91, "baseline": 0.84, ...} or plain text -- read as-is'}
+        />
+      </label>
+      <label style={formLabelStyle}>
+        Notes (optional)
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          style={textareaStyle}
+          placeholder="anything worth flagging -- an outlier seed, a caveat, etc."
+        />
+      </label>
+      <button disabled={!canSubmit} onClick={() => onSubmit(resultsText, notes)}>
+        {responding ? "Working..." : "Submit results"}
+      </button>
+    </div>
+  );
+}
+
+function ReviewFeedbackForm({
+  onRespond,
+  responding,
+}: {
+  onRespond: (response: Record<string, unknown>) => void;
+  responding: boolean;
+}) {
+  const [feedback, setFeedback] = useState("");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+      <label style={formLabelStyle}>
+        Your feedback (optional — merged in as another major concern if you add any)
+        <textarea
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          rows={4}
+          style={textareaStyle}
+          placeholder="e.g. the related-work section still misses the 2024 baseline"
+        />
+      </label>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button disabled={responding} onClick={() => onRespond({ ack: true })} style={{ flex: 1 }}>
+          {responding ? "Working..." : "Approve as-is"}
+        </button>
+        <button
+          disabled={responding || !feedback.trim()}
+          onClick={() => onRespond({ feedback: feedback.trim() })}
+          style={{ flex: 1 }}
+        >
+          {responding ? "Working..." : "Submit feedback"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const hintStyle: CSSProperties = { color: "var(--text-muted)", fontSize: 13 };
+
+const formLabelStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  fontSize: 12,
+  color: "var(--text-secondary)",
+};
+
+const textareaStyle: CSSProperties = {
+  fontFamily: "ui-monospace, Consolas, monospace",
+  fontSize: 12,
+  padding: 6,
+  borderRadius: 6,
+  border: "1px solid var(--gridline)",
+  background: "var(--page-plane)",
+  color: "var(--text-primary)",
+  resize: "vertical",
+};
+
+const concernListStyle: CSSProperties = {
+  margin: 0,
+  paddingLeft: 18,
+  fontSize: 12,
+  color: "var(--text-secondary)",
+};
 
 const preStyle: CSSProperties = {
   background: "var(--page-plane)",

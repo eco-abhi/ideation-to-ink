@@ -302,6 +302,36 @@ def respond_to_gate(paper_id: str, response: dict) -> dict:
     return {"status": "resuming"}
 
 
+class SubmitResultsRequest(BaseModel):
+    results_text: str
+    notes: str | None = None
+
+
+@app.post("/api/papers/{paper_id}/results", status_code=202)
+def submit_results(paper_id: str, req: SubmitResultsRequest) -> dict:
+    """Writes the human-provided results (plus optional notes) to
+    experiments/results/metrics.json -- the file results_gate waits for -- then
+    immediately resumes, standing in for manually dropping the file and running
+    `engine run --resume` from a terminal. stats_validator reads this file as
+    raw text for its LLM prompt, not strict JSON, so free-form notes riding
+    alongside the numbers is fine.
+    """
+    _load_paper_yaml_or_404(paper_id)
+    if not req.results_text.strip():
+        raise HTTPException(status_code=400, detail="results_text must not be empty")
+    from engine.agents.stats_validator import RESULTS_RELPATH
+
+    content = req.results_text
+    if req.notes and req.notes.strip():
+        content = f"{content}\n\n--- researcher notes ---\n{req.notes.strip()}\n"
+    fs_guard.safe_write(paper_id, RESULTS_RELPATH, content, caller_agent="dashboard")
+
+    response_path = paper_dir(paper_id) / "HUMAN_RESPONSE.json"
+    response_path.write_text(json.dumps({"ack": True}))
+    _start_run(paper_id, target_phase=None, resume=True)
+    return {"status": "resuming"}
+
+
 @app.get("/api/papers/{paper_id}/flow", response_model=FlowStatus)
 def get_flow(paper_id: str) -> FlowStatus:
     _load_paper_yaml_or_404(paper_id)

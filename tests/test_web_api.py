@@ -293,6 +293,33 @@ def test_respond_to_gate_rejects_empty_body(tmp_path, client):
     assert response.status_code == 400
 
 
+def test_submit_results_writes_metrics_json_and_resumes(tmp_path, client, monkeypatch):
+    pdir = _scaffold(tmp_path, "demo")
+    started, finished, calls = threading.Event(), threading.Event(), []
+    _mock_run_paper(monkeypatch, started=started, finished=finished, calls=calls)
+
+    response = client.post(
+        "/api/papers/demo/results",
+        json={"results_text": '{"accuracy": 0.91}', "notes": "seed 2 was an outlier"},
+    )
+    assert response.status_code == 202
+    assert started.wait(timeout=2)
+
+    metrics = (pdir / "experiments" / "results" / "metrics.json").read_text()
+    assert '{"accuracy": 0.91}' in metrics
+    assert "seed 2 was an outlier" in metrics
+    assert calls == [{"paper_id": "demo", "target_phase": None, "resume": True}]
+
+    finished.set()
+    _wait_until_not_running("demo")
+
+
+def test_submit_results_rejects_empty_results_text(tmp_path, client):
+    _scaffold(tmp_path, "demo")
+    response = client.post("/api/papers/demo/results", json={"results_text": "   "})
+    assert response.status_code == 400
+
+
 # --- paste-a-whole-paper import ---
 
 

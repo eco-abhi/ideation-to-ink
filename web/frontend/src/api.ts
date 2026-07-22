@@ -125,6 +125,12 @@ export interface ImportPaperFileInput {
   bibliography: string | null;
 }
 
+export interface SubmitResultsInput {
+  slug: string;
+  results_text: string;
+  notes: string | null;
+}
+
 export const api = {
   listPapers: () => request<PaperSummary[]>("/api/papers"),
   createPaper: (input: CreatePaperInput) => postJSON<PaperSummary>("/api/papers", input),
@@ -149,4 +155,9 @@ export const api = {
   triggerRun: (slug: string, phase?: string) => postJSON<{ status: string }>(`/api/papers/${slug}/run`, { phase: phase ?? null }),
   respondToGate: (slug: string, response: Record<string, unknown>) =>
     postJSON<{ status: string }>(`/api/papers/${slug}/respond`, response),
+  submitResults: (input: SubmitResultsInput) =>
+    postJSON<{ status: string }>(`/api/papers/${input.slug}/results`, {
+      results_text: input.results_text,
+      notes: input.notes,
+    }),
 };

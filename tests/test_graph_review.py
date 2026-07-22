@@ -6,6 +6,7 @@ from engine.agents._shared import current_round_number
 from engine.agents.base import NodeResult
 from engine.graphs import review
 from engine.graphs._registry import ERROR_GATE, error_gate
+from engine.llm import LLMResult
 from engine.state import PaperState
 
 
@@ -33,6 +34,17 @@ def _fake_no_op(update=None):
     return _fake
 
 
+def _approve(graph, config):
+    """Every round now pauses at human_review_gate before revision_router runs --
+    resume with no feedback to accept the automated reviewers' verdict as-is,
+    mirroring the dashboard's "Approve as-is" button. Resuming with an empty
+    dict/None doesn't actually advance the graph in the pinned LangGraph
+    version (same quirk documented in engine/graphs/master.py's run_paper()),
+    so this sends a non-empty ack instead, exactly like the dashboard does.
+    """
+    return graph.invoke(Command(resume={"ack": True}), config)
+
+
 def test_converges_immediately_with_no_concerns(monkeypatch):
     monkeypatch.setattr(review, "adversarial_reviewer_ensemble", _fake_no_op())
     monkeypatch.setattr(review, "claims_evidence_auditor", _fake_no_op())
@@ -49,7 +61,13 @@ def test_converges_immediately_with_no_concerns(monkeypatch):
     with SqliteSaver.from_conn_string(":memory:") as cp:
         graph = _build_review_test_graph().compile(checkpointer=cp)
         config = {"configurable": {"thread_id": "demo"}}
-        final = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
+        paused = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
+
+        assert "__interrupt__" in paused
+        assert paused["__interrupt__"][0].value["type"] == "human_review_feedback"
+        assert paused["__interrupt__"][0].value["major_concerns"] == []
+
+        final = _approve(graph, config)
 
         assert "__interrupt__" not in final
         assert final["phase"] == "done"
@@ -82,7 +100,13 @@ def test_loops_once_then_converges(monkeypatch):
     with SqliteSaver.from_conn_string(":memory:") as cp:
         graph = _build_review_test_graph().compile(checkpointer=cp)
         config = {"configurable": {"thread_id": "demo"}}
-        final = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
+        paused = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
+        assert paused["__interrupt__"][0].value["type"] == "human_review_feedback"
+
+        paused = _approve(graph, config)  # round 1 (major concern) -> loop back
+        assert paused["__interrupt__"][0].value["type"] == "human_review_feedback"
+
+        final = _approve(graph, config)  # round 2 (clean) -> converges
 
         assert final["phase"] == "done"
         # raw append-only log: round 1 (major concern), round 2 (clean), round 2 (resolved correction)
@@ -118,9 +142,56 @@ def test_hits_loop_cap_then_interrupts_and_force_done(monkeypatch):
         config = {"configurable": {"thread_id": "demo"}}
         result = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
 
+        for _ in range(3):
+            assert "__interrupt__" in result
+            assert result["__interrupt__"][0].value["type"] == "human_review_feedback"
+            result = _approve(graph, config)
+
         assert "__interrupt__" in result
         assert result["__interrupt__"][0].value["type"] == "revision_cap_reached"
         assert result["revision_loop_count"] == 3
 
         final = graph.invoke(Command(resume={"decision": "force_done"}), config)
         assert final["phase"] == "done"
+
+
+def test_human_feedback_merges_into_major_concerns_and_forces_a_revision_round(monkeypatch):
+    # Automated reviewers find nothing; a human reviewer's own feedback should
+    # still be enough, on its own, to trigger a revision round -- proving
+    # human_review_gate's merge lands where revision_router actually reads from.
+    monkeypatch.setattr(review, "adversarial_reviewer_ensemble", _fake_no_op())
+    monkeypatch.setattr(review, "claims_evidence_auditor", _fake_no_op())
+    monkeypatch.setattr(review, "flow_checker", _fake_no_op())
+    monkeypatch.setattr(review, "compliance_checker", _fake_no_op())
+
+    def real_revision_router(state):
+        from engine.agents.revision_router import revision_router as impl
+
+        return impl(state)
+
+    monkeypatch.setattr(review, "revision_router", real_revision_router)
+
+    from engine.agents.revision_router import RevisionBrief
+
+    monkeypatch.setattr(
+        "engine.agents.revision_router.call_llm_json",
+        lambda *a, **k: (
+            RevisionBrief(section_instructions={}),
+            LLMResult(content="{}", model="fake/model", prompt_tokens=10, completion_tokens=5),
+        ),
+    )
+
+    with SqliteSaver.from_conn_string(":memory:") as cp:
+        graph = _build_review_test_graph().compile(checkpointer=cp)
+        config = {"configurable": {"thread_id": "demo"}}
+        paused = graph.invoke({"paper_id": "demo", "topic": "x", "phase": "review"}, config)
+        assert paused["__interrupt__"][0].value["type"] == "human_review_feedback"
+        assert paused["__interrupt__"][0].value["major_concerns"] == []
+
+        final = graph.invoke(Command(resume={"feedback": "the ablation table is missing a column"}), config)
+
+        assert final["phase"] == "revision"
+        assert final["revision_loop_count"] == 1
+        current = final["review_rounds"][-1]
+        concerns = current["major_concerns"] if isinstance(current, dict) else current.major_concerns
+        assert "the ablation table is missing a column" in concerns

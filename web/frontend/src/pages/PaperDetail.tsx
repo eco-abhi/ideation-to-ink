@@ -96,6 +96,19 @@ export function PaperDetail({ paperId, onBack }: Props) {
     }
   };
 
+  const handleSubmitResults = async (resultsText: string, notes: string) => {
+    setActionPending(true);
+    setError(null);
+    try {
+      await api.submitResults({ slug: paperId, results_text: resultsText, notes: notes.trim() || null });
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
   const canRun = detail && !detail.running && !detail.paused && detail.phase !== "done";
   const canRerun = detail && !detail.running;
 
@@ -167,6 +180,7 @@ export function PaperDetail({ paperId, onBack }: Props) {
                 selectedNodeId={selectedNodeId}
                 provenance={provenance}
                 onRespond={handleRespond}
+                onSubmitResults={handleSubmitResults}
                 responding={actionPending}
               />
             )}

@@ -117,11 +117,12 @@ def test_run_single_agent_hydrates_from_paper_yaml_when_no_checkpoint(tmp_path, 
 
 
 def test_full_pipeline_reaches_done_and_writes_ledger(tmp_path, monkeypatch, capsys):
-    """End-to-end: every phase mocked to return a clean result, two human gates
-    (novelty verdict, methodology approval) resumed, results_gate passed through
-    silently (metrics.json pre-seeded), citation_human_gate passed through
-    silently (no suspicious citations), revision_router converging immediately
-    (no major concerns) -> phase=done -> automatic state_compaction ledger write.
+    """End-to-end: every phase mocked to return a clean result, three human gates
+    (novelty verdict, methodology approval, human review feedback) resumed,
+    results_gate passed through silently (metrics.json pre-seeded),
+    citation_human_gate passed through silently (no suspicious citations),
+    revision_router converging immediately (no major concerns) -> phase=done ->
+    automatic state_compaction ledger write.
     """
     pdir = _setup(tmp_path, monkeypatch)
 
@@ -166,6 +167,12 @@ def test_full_pipeline_reaches_done_and_writes_ledger(tmp_path, monkeypatch, cap
     assert payload["type"] == "methodology_approval"
 
     (pdir / "HUMAN_RESPONSE.json").write_text(json.dumps({"decision": "approve"}))
+    master.run_paper("demo", resume=True)  # -> human_review_feedback interrupt
+
+    payload = json.loads((pdir / "HUMAN_INPUT_NEEDED.json").read_text())
+    assert payload["type"] == "human_review_feedback"
+
+    (pdir / "HUMAN_RESPONSE.json").write_text(json.dumps({"ack": True}))
     master.run_paper("demo", resume=True)  # -> runs the rest of the pipeline to completion
 
     captured = capsys.readouterr()
